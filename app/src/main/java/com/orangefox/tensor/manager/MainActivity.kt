@@ -132,7 +132,7 @@ import androidx.compose.ui.unit.dp
 import com.orangefox.tensor.manager.ui.BottomBlurBar
 import com.orangefox.tensor.manager.ui.ExpandableGroupCard
 import com.orangefox.tensor.manager.ui.ExpressiveSegmentedRow
-import com.orangefox.tensor.manager.ui.lighten
+import com.orangefox.tensor.manager.ui.edgeOutline
 import com.orangefox.tensor.manager.ui.GraphicsLayerRecordingState
 import com.orangefox.tensor.manager.ui.MarkdownBody
 import com.orangefox.tensor.manager.ui.NetworkBannerImage
@@ -998,7 +998,7 @@ fun Root(
                             modifier = Modifier
                                 .clip(CircleShape)
                                 .background(pillBg)
-                                .border(1.dp, pillBg.lighten(), CircleShape)
+                                .border(1.dp, pillBg.edgeOutline(), CircleShape)
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
@@ -1133,7 +1133,7 @@ private fun SettingsScreen(
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(24.dp)),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(24.dp)),
                 ) {
                     Column(
                         modifier = Modifier.padding(18.dp),
@@ -1145,78 +1145,15 @@ private fun SettingsScreen(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                ThemeMode.entries.forEach { mode ->
-                                    val selected = themeMode == mode
-                                    val cornerRadius by animateDpAsState(
-                                        targetValue = if (selected) 28.dp else 12.dp,
-                                        animationSpec = spring(
-                                            stiffness = Spring.StiffnessMedium,
-                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                        ),
-                                        label = "ThemePillCorner",
-                                    )
-                                    val bgColor by animateColorAsState(
-                                        targetValue = if (selected) {
-                                            MaterialTheme.colorScheme.primaryContainer
-                                        } else {
-                                            MaterialTheme.colorScheme.surfaceContainerHighest
-                                        },
-                                        animationSpec = tween(200),
-                                        label = "ThemePillBg",
-                                    )
-                                    val contentColor by animateColorAsState(
-                                        targetValue = if (selected) {
-                                            MaterialTheme.colorScheme.onPrimaryContainer
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        animationSpec = tween(200),
-                                        label = "ThemePillContent",
-                                    )
-
-                                    Row(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(46.dp)
-                                            .clip(RoundedCornerShape(cornerRadius))
-                                            .background(bgColor)
-                                            .clickable {
-                                                haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                                onThemeModeChange(mode)
-                                            }
-                                            .padding(horizontal = 8.dp),
-                                        horizontalArrangement = Arrangement.Center,
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        AnimatedVisibility(
-                                            visible = selected,
-                                            enter = fadeIn(tween(160)) + expandHorizontally(),
-                                            exit = fadeOut(tween(120)) + shrinkHorizontally(),
-                                        ) {
-                                            Text(
-                                                text = "✓ ",
-                                                style = MaterialTheme.typography.labelLarge,
-                                                fontWeight = FontWeight.Bold,
-                                                color = contentColor,
-                                            )
-                                        }
-                                        Text(
-                                            text = stringResource(mode.labelRes),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                            color = contentColor,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            textAlign = TextAlign.Center,
-                                        )
-                                    }
-                                }
-                            }
+                            ExpressiveSegmentedRow(
+                                items = ThemeMode.entries,
+                                selectedItem = themeMode,
+                                onSelect = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                    onThemeModeChange(it)
+                                },
+                                labelProvider = { stringResource(it.labelRes) },
+                            )
                         }
 
                         HorizontalDivider(
@@ -1248,7 +1185,7 @@ private fun SettingsScreen(
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(24.dp)),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(24.dp)),
                 ) {
                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
                         SettingSwitchRow(
@@ -1332,7 +1269,7 @@ private fun SettingsScreen(
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(24.dp)),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(24.dp)),
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -1345,14 +1282,14 @@ private fun SettingsScreen(
                             FilledTonalButton(
                                 onClick = { uriHandler.openUri("https://t.me/OFRPforTensor") },
                                 shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.weight(1f).border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(14.dp)),
+                                modifier = Modifier.weight(1f).height(48.dp).border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
                             ) {
                                 Text("@OFRPforTensor")
                             }
                             FilledTonalButton(
                                 onClick = { uriHandler.openUri("https://t.me/OFRPforTensorDiscussion") },
                                 shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.weight(1f).border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(14.dp)),
+                                modifier = Modifier.weight(1f).height(48.dp).border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
                             ) {
                                 Text(stringResource(R.string.link_tg_discussion))
                             }
@@ -1371,7 +1308,7 @@ private fun SettingsScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(12.dp))
-                                            .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh.lighten(), RoundedCornerShape(12.dp))
+                                            .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh.edgeOutline(), RoundedCornerShape(12.dp))
                                             .clickable { uriHandler.openUri(url) },
                                     ) {
                                         Row(
@@ -1408,7 +1345,7 @@ private fun SettingsScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(12.dp))
-                                            .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh.lighten(), RoundedCornerShape(12.dp))
+                                            .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh.edgeOutline(), RoundedCornerShape(12.dp))
                                             .clickable { uriHandler.openUri(url) },
                                     ) {
                                         Row(
@@ -1450,7 +1387,7 @@ private fun SettingsScreen(
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(24.dp)),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(24.dp)),
                 ) {
                     Column(
                         modifier = Modifier.padding(18.dp),
@@ -1471,7 +1408,7 @@ private fun SettingsScreen(
                                 uriHandler.openUri("https://github.com/leegarchat/twrp_device_google_pixels/tree/R12_16#readme")
                             },
                             shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary.lighten(), RoundedCornerShape(16.dp)),
+                            modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary.edgeOutline(), RoundedCornerShape(16.dp)),
                         ) {
                             Text(
                                 text = stringResource(R.string.action_donate_support),
@@ -2087,7 +2024,7 @@ private fun OpenGitHubReleaseButton(tag: String) {
             uriHandler.openUri("https://github.com/leegarchat/twrp_device_google_pixels/releases/tag/$tag")
         },
         shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(14.dp)),
+        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
     ) {
         Text(
             text = stringResource(R.string.action_open_github_release),
@@ -2329,7 +2266,7 @@ internal fun AssetRow(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(42.dp)
-                            .border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(14.dp)),
+                            .border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_download),
@@ -2374,7 +2311,7 @@ internal fun AssetRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(42.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(14.dp)),
+                        .border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
                 ) {
                     Text(stringResource(R.string.action_retry))
                 }
@@ -2396,7 +2333,7 @@ internal fun AssetRow(
                             modifier = Modifier
                                 .weight(1f)
                                 .height(42.dp)
-                                .border(1.dp, MaterialTheme.colorScheme.primaryContainer.lighten(), RoundedCornerShape(14.dp)),
+                                .border(1.dp, MaterialTheme.colorScheme.primaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
                         ) {
                             Text(
                                 text = stringResource(R.string.action_install),
@@ -2416,7 +2353,7 @@ internal fun AssetRow(
                         modifier = Modifier
                             .weight(1f)
                             .height(42.dp)
-                            .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.lighten(), RoundedCornerShape(14.dp)),
+                            .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.edgeOutline(), RoundedCornerShape(14.dp)),
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_download),

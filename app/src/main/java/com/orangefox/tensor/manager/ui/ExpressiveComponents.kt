@@ -70,9 +70,24 @@ import androidx.compose.ui.unit.dp
 import com.orangefox.tensor.manager.R
 
 /**
- * Осветление цвета для микрообводки (даёт объём, в гармонии с float-барами).
+ * Едва заметная микрообводка для объёма (в гармонии с float-барами).
+ * Адаптивная: на светлом контейнере темнит, на тёмном — осветляет.
  */
-internal fun Color.lighten(amount: Float = 0.3f): Color = copy(
+internal fun Color.edgeOutline(alpha: Float = 0.45f): Color {
+    val luminance = 0.2126f * red + 0.7152f * green + 0.0722f * blue
+    val shifted = if (luminance > 0.55f) {
+        copy(red = red * 0.8f, green = green * 0.8f, blue = blue * 0.8f)
+    } else {
+        copy(
+            red = (red + (1f - red) * 0.22f).coerceIn(0f, 1f),
+            green = (green + (1f - green) * 0.22f).coerceIn(0f, 1f),
+            blue = (blue + (1f - blue) * 0.22f).coerceIn(0f, 1f),
+        )
+    }
+    return shifted.copy(alpha = alpha)
+}
+
+private fun Color.lighten(amount: Float = 0.3f): Color = copy(
     red = (red + (1f - red) * amount).coerceIn(0f, 1f),
     green = (green + (1f - green) * amount).coerceIn(0f, 1f),
     blue = (blue + (1f - blue) * amount).coerceIn(0f, 1f),
@@ -128,7 +143,7 @@ fun <T> ExpressiveSegmentedRow(
                     .height(height)
                     .clip(RoundedCornerShape(cornerRadius))
                     .background(bgColor)
-                    .border(1.dp, bgColor.lighten(), RoundedCornerShape(cornerRadius))
+                    .border(1.dp, bgColor.edgeOutline(), RoundedCornerShape(cornerRadius))
                     .clickable {
                         haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                         onSelect(item)

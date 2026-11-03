@@ -78,7 +78,7 @@ import com.orangefox.tensor.manager.ui.ExpandableGroupCard
 import com.orangefox.tensor.manager.ui.ExpressiveUnpackCard
 import com.orangefox.tensor.manager.ui.ExpressiveLinearProgress
 import com.orangefox.tensor.manager.ui.ExpressiveSegmentedRow
-import com.orangefox.tensor.manager.ui.lighten
+import com.orangefox.tensor.manager.ui.edgeOutline
 import com.orangefox.tensor.manager.ui.SettingSlider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -321,7 +321,7 @@ fun InstallScreen(
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                         shape = RoundedCornerShape(22.dp),
-                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(22.dp)),
+                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(22.dp)),
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -335,7 +335,7 @@ fun InstallScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp)
-                                    .border(1.dp, MaterialTheme.colorScheme.primary.lighten(), RoundedCornerShape(16.dp)),
+                                    .border(1.dp, MaterialTheme.colorScheme.primary.edgeOutline(), RoundedCornerShape(16.dp)),
                             ) {
                                 Icon(
                                     painter = painterResource(R.drawable.ic_download),
@@ -562,7 +562,7 @@ private fun LocalFileInstallCard(
     onDelete: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(20.dp)),
+        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(20.dp)),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -642,7 +642,7 @@ private fun LocalFileInstallCard(
                     modifier = Modifier
                         .weight(1f)
                         .height(42.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.primaryContainer.lighten(), RoundedCornerShape(14.dp)),
+                        .border(1.dp, MaterialTheme.colorScheme.primaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
                 ) {
                     Text(
                         text = stringResource(R.string.action_install),
@@ -660,7 +660,7 @@ private fun LocalFileInstallCard(
                     modifier = Modifier
                         .weight(1f)
                         .height(42.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.lighten(), RoundedCornerShape(14.dp)),
+                        .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.edgeOutline(), RoundedCornerShape(14.dp)),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_download),
@@ -692,7 +692,7 @@ private fun ReleaseInstallCard(
     onInstall: (ReleaseAsset) -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(20.dp)),
+        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(20.dp)),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -723,7 +723,7 @@ private fun ReleaseInstallCard(
                     onClick = onOpenRelease,
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(12.dp)),
+                    modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(12.dp)),
                 ) {
                     Text(
                         text = stringResource(R.string.action_open_release),
@@ -787,7 +787,7 @@ private fun BackupRestoreModal(
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(12.dp)),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(12.dp)),
                 ) {
                     Text(
                         text = stringResource(
@@ -824,7 +824,7 @@ private fun BackupRestoreModal(
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainerHighest,
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.lighten(), RoundedCornerShape(12.dp)),
+                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.edgeOutline(), RoundedCornerShape(12.dp)),
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             logs.takeLast(6).forEach { line ->
@@ -1011,7 +1011,7 @@ private fun InstallerSubmenuView(
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = RoundedCornerShape(22.dp),
-                modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(22.dp)),
+                modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(22.dp)),
             ) {
                 Row(
                     modifier = Modifier
@@ -1085,7 +1085,7 @@ private fun InstallerSubmenuView(
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                         shape = RoundedCornerShape(22.dp),
-                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(22.dp)),
+                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(22.dp)),
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -1127,7 +1127,7 @@ private fun InstallerSubmenuView(
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
                         shape = RoundedCornerShape(22.dp),
-                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(22.dp)),
+                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(22.dp)),
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -1241,7 +1241,7 @@ private fun InstallerSubmenuView(
                                             containerColor = MaterialTheme.colorScheme.error,
                                             contentColor = MaterialTheme.colorScheme.onError,
                                         ),
-                                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.error.lighten(), RoundedCornerShape(14.dp)),
+                                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.error.edgeOutline(), RoundedCornerShape(14.dp)),
                                     ) {
                                         Text(
                                             text = stringResource(R.string.action_strip_16k_retry),
@@ -1363,7 +1363,7 @@ private fun InstallerSubmenuView(
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(22.dp),
-                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(22.dp)),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(22.dp)),
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -1477,7 +1477,7 @@ private fun InstallerSubmenuView(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp)
-                            .border(1.dp, MaterialTheme.colorScheme.primary.lighten(), RoundedCornerShape(18.dp)),
+                            .border(1.dp, MaterialTheme.colorScheme.primary.edgeOutline(), RoundedCornerShape(18.dp)),
                     ) {
                         Text(
                             text = if (destinationMode == InstallDestinationMode.SaveToDownloads &&
@@ -1502,7 +1502,7 @@ private fun InstallerSubmenuView(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp)
-                                    .border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(16.dp)),
+                                    .border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(16.dp)),
                             ) {
                                 Text(
                                     text = stringResource(R.string.action_reboot_recovery),
@@ -1515,7 +1515,7 @@ private fun InstallerSubmenuView(
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
                             shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.lighten(), RoundedCornerShape(16.dp)),
+                            modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.edgeOutline(), RoundedCornerShape(16.dp)),
                         ) {
                             Column(modifier = Modifier.padding(14.dp)) {
                                 consoleLogs.forEach { line ->
