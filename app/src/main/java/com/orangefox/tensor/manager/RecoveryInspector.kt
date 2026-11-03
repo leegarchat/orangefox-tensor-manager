@@ -161,6 +161,8 @@ internal fun identifyRom(props: Map<String, String>): Pair<String, String> {
 
 object RecoveryStateCache {
     private const val TAG = "RecoveryInspector"
+    private val inspectorScope = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+
     var slotInfo = mutableStateMapOf<String, SlotRecoveryInfo>()
     var activeSlot by mutableStateOf("a")
     var isInspecting by mutableStateOf(false)
@@ -172,48 +174,62 @@ object RecoveryStateCache {
 
     private val mutex = Mutex()
 
-    fun ensureLoadedOnStartup(context: Context, scope: CoroutineScope) {
+    fun ensureLoadedOnStartup(context: Context, @Suppress("UNUSED_PARAMETER") scope: CoroutineScope? = null) {
         if (initialized) return
         initialized = true
-        refresh(context, scope, forceUnpack = false)
+        refresh(context, forceUnpack = false)
     }
 
-    fun refresh(context: Context, scope: CoroutineScope, forceUnpack: Boolean = false) {
-        scope.launch(Dispatchers.IO) {
+    fun refresh(
+        context: Context,
+        @Suppress("UNUSED_PARAMETER") scope: CoroutineScope? = null,
+        forceUnpack: Boolean = false,
+    ) {
+        val appCtx = context.applicationContext
+        inspectorScope.launch {
             mutex.withLock {
-                withContext(Dispatchers.Main) { isInspecting = true }
+                isInspecting = true
                 try {
-                    val cachedMap = loadDiskCache(context)
-                    val sysSlot = readActiveSlotNonRoot()
-                    val liveFp = readLiveProp("ro.build.fingerprint")
-                    val liveInc = readLiveProp("ro.build.version.incremental")
-                    val liveFlav = readLiveProp("ro.build.flavor")
+                    val cachedMap = loadDiskCache(appCtx)
+                    val sysSlot = RootInstallerEngine.readActiveSlotSuffix()
+                    val liveFp = RootInstallerEngine.readSystemProp("ro.build.fingerprint")
+                    val liveInc = RootInstallerEngine.readSystemProp("ro.build.version.incremental")
+                    val liveFlav = RootInstallerEngine.readSystemProp("ro.build.flavor")
+
                     withContext(Dispatchers.Main) {
                         liveFingerprint = liveFp
                         liveIncremental = liveInc
                         liveFlavor = liveFlav
-                    }
-                    withContext(Dispatchers.Main) {
                         activeSlot = sysSlot
                         if (slotInfo.isEmpty() && cachedMap.isNotEmpty()) {
                             slotInfo.putAll(cachedMap)
                         }
                     }
 
-                    val rootGranted = RootInstallerEngine.checkRootAccess()
+                    // Одним вызовом su проверяем root и сразу считаем sha256sum для обоих слотов
+                    val (rc, probeOut) = RootInstallerEngine.runRootCommand(
+                        "id && sha256sum /dev/block/by-name/vendor_boot_a /dev/block/by-name/vendor_boot_b 2>/dev/null",
+                        timeoutSec = 30,
+                    )
+                    val rootGranted = rc == 0 && probeOut.contains("uid=0")
                     withContext(Dispatchers.Main) { hasRoot = rootGranted }
+                    if (!rootGranted) return@withLock
 
-                    if (!rootGranted) {
-                        return@withLock
+                    val hashes = HashMap<String, String>()
+                    probeOut.lineSequence().forEach { line ->
+                        val parts = line.trim().split(Regex("\\s+"))
+                        if (parts.size >= 2 && parts[0].length == 64) {
+                            when {
+                                parts[1].endsWith("_a") -> hashes["a"] = parts[0].lowercase(Locale.US)
+                                parts[1].endsWith("_b") -> hashes["b"] = parts[0].lowercase(Locale.US)
+                            }
+                        }
                     }
-
-                    val (_, rootSlot) = RootInstallerEngine.getDeviceOverview()
-                    withContext(Dispatchers.Main) { activeSlot = rootSlot }
 
                     val updatedMap = cachedMap.toMutableMap()
                     for (slot in listOf("a", "b")) {
                         val blockPath = "/dev/block/by-name/vendor_boot_$slot"
-                        val currentHash = queryBlockSha256(blockPath)
+                        val currentHash = hashes[slot] ?: queryBlockSha256(blockPath)
                         val cached = cachedMap[slot]
 
                         if (!forceUnpack &&
@@ -223,7 +239,7 @@ object RecoveryStateCache {
                         ) {
                             updatedMap[slot] = cached
                         } else if (currentHash.isNotEmpty()) {
-                            val inspected = inspectSlotPartition(context, slot, blockPath, currentHash)
+                            val inspected = inspectSlotPartition(appCtx, slot, blockPath, currentHash)
                             if (inspected != null) {
                                 updatedMap[slot] = inspected
                             }
@@ -232,22 +248,13 @@ object RecoveryStateCache {
                             updatedMap[slot]?.let { slotInfo[slot] = it }
                         }
                     }
-                    saveDiskCache(context, updatedMap)
+                    saveDiskCache(appCtx, updatedMap)
+                } catch (e: Throwable) {
+                    Log.e(TAG, "refresh error", e)
                 } finally {
-                    withContext(Dispatchers.Main) { isInspecting = false }
+                    isInspecting = false
                 }
             }
-        }
-    }
-
-    private fun readLiveProp(key: String): String {
-        return try {
-            val proc = ProcessBuilder("getprop", key).start()
-            val out = proc.inputStream.bufferedReader().readText().trim()
-            proc.waitFor()
-            out
-        } catch (_: Exception) {
-            ""
         }
     }
 
@@ -261,36 +268,16 @@ object RecoveryStateCache {
             info.buildFlavor == liveFlavor
     }
 
-    private fun readActiveSlotNonRoot(): String {
-        return try {
-            val proc = ProcessBuilder("getprop", "ro.boot.slot_suffix").start()
-            val out = proc.inputStream.bufferedReader().readText().trim().removePrefix("_")
-            proc.waitFor()
-            if (out == "b") "b" else "a"
-        } catch (_: Exception) {
-            "a"
-        }
-    }
+    private fun runSu(cmd: String, timeoutSec: Long = 60): Pair<Int, String> =
+        RootInstallerEngine.runRootCommand(cmd, timeoutSec)
 
-    private fun runSu(cmd: String): Pair<Int, String> {
-        return try {
-            val proc = ProcessBuilder("su", "-c", cmd)
-                .redirectErrorStream(true)
-                .start()
-            val out = proc.inputStream.bufferedReader().readText()
-            val rc = proc.waitFor()
-            rc to out.trim()
-        } catch (e: Exception) {
-            -1 to (e.message ?: "")
-        }
-    }
-
-    private fun shQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+    private fun shQuote(value: String): String =
+        RootInstallerEngine.shQuote(value)
 
     private fun queryBlockSha256(blockPath: String): String {
-        val (rc, out) = runSu("sha256sum $blockPath")
+        val (rc, out) = runSu("sha256sum $blockPath", timeoutSec = 25)
         if (rc != 0 || out.isBlank()) return ""
-        return out.trim().split(Regex("\\s+")).firstOrNull()?.lowercase() ?: ""
+        return out.trim().split(Regex("\\s+")).firstOrNull()?.lowercase(Locale.US) ?: ""
     }
 
     private fun formatBuildDate(utcSec: Long): String {
@@ -316,15 +303,25 @@ object RecoveryStateCache {
         }
         if (target.isFile) {
             target.setExecutable(true, false)
-            runSu("chmod 755 ${shQuote(target.absolutePath)}")
+            runSu("chmod 755 ${shQuote(target.absolutePath)}", timeoutSec = 10)
             return target
         }
         return null
     }
 
-    /**
-     * Извлекает ASCII-строки из бинарника `twrp` и ищет версию вида R12.0_... и маркер OrangeFox.
-     */
+    private fun deleteIfSymlinkOrInvalid(file: File): Boolean {
+        val path = file.toPath()
+        if (Files.isSymbolicLink(path)) {
+            runCatching { Files.deleteIfExists(path) }
+            return false
+        }
+        if (!file.isFile || file.length() == 0L) {
+            runCatching { file.delete() }
+            return false
+        }
+        return true
+    }
+
     private fun extractVersionFromTwrpBinary(twrpFile: File): Pair<String?, Boolean> {
         if (!twrpFile.isFile || twrpFile.length() == 0L) return null to false
         val bytes = twrpFile.readBytes()
@@ -367,18 +364,24 @@ object RecoveryStateCache {
         Log.d(TAG, "slot $slot: bundledLgz=${bundledLgz?.absolutePath} exists=${bundledLgz?.isFile}")
 
         val workDir = File(context.cacheDir, "slot_inspect_$slot")
-        runSu("rm -rf ${shQuote(workDir.absolutePath)}")
+        runSu("rm -rf ${shQuote(workDir.absolutePath)}", timeoutSec = 15)
         workDir.mkdirs()
 
         try {
             val imgFile = File(workDir, "vendor_boot.img")
-            val (ddRc, _) = runSu("dd if=$blockPath of=${shQuote(imgFile.absolutePath)} bs=1048576 && chmod 666 ${shQuote(imgFile.absolutePath)}")
-            if (ddRc != 0 || !imgFile.isFile) return null
-
             val mbPath = shQuote(magiskboot.absolutePath)
-            runSu("cd ${shQuote(workDir.absolutePath)} && $mbPath unpack -h ${shQuote(imgFile.absolutePath)} && chmod -R 777 ${shQuote(workDir.absolutePath)}")
+            // В один вызов su снимаем образ и распаковываем его через magiskboot
+            val (unpackRc, _) = runSu(
+                "dd if=$blockPath of=${shQuote(imgFile.absolutePath)} bs=1048576 && " +
+                    "cd ${shQuote(workDir.absolutePath)} && " +
+                    "$mbPath unpack -h ${shQuote(imgFile.absolutePath)} && " +
+                    "chmod -R 777 ${shQuote(workDir.absolutePath)}",
+                timeoutSec = 45,
+            )
+            if (unpackRc != 0 && !File(workDir, "vendor_ramdisk").exists() && !File(workDir, "ramdisk.cpio").exists()) {
+                return null
+            }
 
-            // Собираем все .cpio (recovery.cpio приоритетно, затем ramdisk.cpio и прочие)
             val cpioCandidates = buildList {
                 val rec = File(workDir, "vendor_ramdisk/recovery.cpio")
                 if (rec.isFile) add(rec)
@@ -415,135 +418,110 @@ object RecoveryStateCache {
 
             for (cpio in cpioCandidates) {
                 val cpioPath = shQuote(cpio.absolutePath)
-                val (_, lsOut) = runSu("$mbPath cpio $cpioPath ls")
+                val (_, lsOut) = runSu("$mbPath cpio $cpioPath ls", timeoutSec = 20)
                 val entries = lsOut.lines()
-                    .map { it.trim().split(Regex("\\s+")).lastOrNull() ?: "" }
+                    .map { it.trim().split(Regex("\\s+")).lastOrNull()?.removePrefix("./") ?: "" }
                     .filter { it.isNotEmpty() }
 
-                // 1. Вытаскиваем внутренний lgz-декодер из рамдиска (для совместимости со старыми RC5 и новыми билдами)
-                val ramdiskLgzEntry = entries.firstOrNull {
+                // 1. Декодер lgz (сначала из рамдиска для старых билдов, иначе комплектный)
+                var activeLgzBin: File? = null
+                val lgzCandidates = (entries.filter {
                     it.endsWith("/lgz") || it == "lgz" || it.contains("lgz-lean")
-                }
-                val ramdiskLgzBin = if (ramdiskLgzEntry != null) {
-                    val outBin = File(workDir, "ramdisk_lgz_bin")
-                    runSu("$mbPath cpio $cpioPath ${shQuote("extract $ramdiskLgzEntry ${outBin.absolutePath}")} && chmod 755 ${shQuote(outBin.absolutePath)}")
-                    outBin.takeIf { it.isFile && it.length() > 0L }
-                } else {
-                    null
-                }
+                } + listOf("system/bin/lgz", "sbin/lgz", "bin/lgz")).distinct()
 
-                var activeLgzBin = ramdiskLgzBin ?: bundledLgz
-                if (activeLgzBin == null) {
-                    // magiskboot ls на старых билдах показывает лишь ~90 из ~5000 записей —
-                    // тянем декодер по прямому имени.
-                    for (cand in listOf("system/bin/lgz", "sbin/lgz", "bin/lgz")) {
-                        val outBin = File(workDir, "ramdisk_lgz_direct")
-                        outBin.delete()
-                        val (lrc, _) = runSu("$mbPath cpio $cpioPath ${shQuote("extract $cand ${outBin.absolutePath}")}")
-                        if (lrc == 0 && outBin.isFile && outBin.length() > 0L &&
-                            !Files.isSymbolicLink(outBin.toPath())
-                        ) {
-                            runSu("chmod 755 ${shQuote(outBin.absolutePath)}")
-                            activeLgzBin = outBin
-                            Log.d(TAG, "slot $slot: direct lgz decoder -> $cand")
-                            break
-                        } else {
-                            outBin.delete()
-                        }
+                for (cand in lgzCandidates) {
+                    val outBin = File(workDir, "ramdisk_lgz_bin")
+                    runCatching { Files.deleteIfExists(outBin.toPath()) }
+                    val (lrc, _) = runSu("$mbPath cpio $cpioPath ${shQuote("extract $cand ${outBin.absolutePath}")}", timeoutSec = 15)
+                    if (lrc == 0 && deleteIfSymlinkOrInvalid(outBin)) {
+                        runSu("chmod 755 ${shQuote(outBin.absolutePath)}", timeoutSec = 10)
+                        activeLgzBin = outBin
+                        break
                     }
                 }
+                if (activeLgzBin == null) activeLgzBin = bundledLgz
 
-                // 2. Извлекаем prop.default / default.prop (обычный или сжатый в одиночный .lgz в старых билдах)
-                val propEntry = entries.firstOrNull {
-                    it == "prop.default" || it.endsWith("/prop.default")
-                }
-                Log.d(TAG, "slot $slot: cpio=${cpio.name} entries=${entries.size} prop=$propEntry twrpCand=${entries.firstOrNull { it == "system/bin/twrp" || it == "sbin/twrp" || it == "system/bin/twrp.lgz" }} lgzCount=${entries.count { it.endsWith(".lgz", ignoreCase = true) }}")
-                val propLgzEntry = entries.firstOrNull {
-                    it == "prop.default.lgz" || it.endsWith("/prop.default.lgz")
-                }
+                // 2. prop.default: один вызов extract+chmod, гейт только isFile+length
+                // (magiskboot врёт rc=0 даже для отсутствующих записей — rc не проверяем).
+                // Сначала настоящий prop.default, симлинк default.prop пропускаем.
+                if (propText.isEmpty()) {
+                    val propCandidates = (entries.filter {
+                        it == "prop.default" || it.endsWith("/prop.default")
+                    }.sortedByDescending { it.length } + listOf(
+                        "system/etc/prop.default",
+                        "etc/prop.default",
+                        "prop.default",
+                    )).distinct()
 
-                if (propEntry != null && propText.isEmpty()) {
-                    val rawProp = File(workDir, "extracted_prop")
-                    runSu("$mbPath cpio $cpioPath ${shQuote("extract $propEntry ${rawProp.absolutePath}")} && chmod 666 ${shQuote(rawProp.absolutePath)}")
-                    if (rawProp.isFile && Files.isSymbolicLink(rawProp.toPath())) {
-                        Log.d(TAG, "slot $slot: $propEntry extracted as symlink, deleting")
+                    for (cand in propCandidates) {
+                        val rawProp = File(workDir, "extracted_prop")
+                        runSu("$mbPath cpio $cpioPath ${shQuote("extract $cand ${rawProp.absolutePath}")} && chmod 666 ${shQuote(rawProp.absolutePath)}", timeoutSec = 20)
+                        if (rawProp.isFile && Files.isSymbolicLink(rawProp.toPath())) {
+                            Log.d(TAG, "slot $slot: $cand is symlink, deleting")
+                            rawProp.delete()
+                            continue
+                        }
+                        if (!rawProp.isFile || rawProp.length() == 0L) continue
+                        val asText = runCatching { rawProp.readText() }.getOrDefault("")
+                        if (asText.contains("ro.")) {
+                            propText = asText
+                            break
+                        }
+                        if (activeLgzBin != null) {
+                            val decProp = File(workDir, "dec_prop")
+                            decProp.delete()
+                            runSu("${shQuote(activeLgzBin.absolutePath)} decompress ${shQuote(rawProp.absolutePath)} ${shQuote(decProp.absolutePath)} --no-meta || " +
+                                "${shQuote(activeLgzBin.absolutePath)} decompress ${shQuote(rawProp.absolutePath)} ${shQuote(decProp.absolutePath)} || " +
+                                "${shQuote(activeLgzBin.absolutePath)} -d ${shQuote(rawProp.absolutePath)} ${shQuote(decProp.absolutePath)}", timeoutSec = 25)
+                            runSu("chmod 666 ${shQuote(decProp.absolutePath)}", timeoutSec = 10)
+                            if (decProp.isFile && decProp.length() > 0L) {
+                                val decTxt = runCatching { decProp.readText() }.getOrDefault("")
+                                if (decTxt.contains("ro.")) {
+                                    propText = decTxt
+                                    break
+                                }
+                            }
+                        }
                         rawProp.delete()
                     }
-                    if (rawProp.isFile && rawProp.length() > 0L) {
-                        val content = rawProp.readText()
-                        if (content.contains("ro.")) {
-                            propText = content
-                        } else if (activeLgzBin != null) {
-                            // Если внутри prop.default бинарный одиночный .lgz
-                            val decProp = File(workDir, "dec_prop")
-                            runSu("${shQuote(activeLgzBin.absolutePath)} decompress ${shQuote(rawProp.absolutePath)} ${shQuote(decProp.absolutePath)} --no-meta || ${shQuote(activeLgzBin.absolutePath)} -d ${shQuote(rawProp.absolutePath)} ${shQuote(decProp.absolutePath)}")
-                            if (decProp.isFile && decProp.length() > 0L) propText = decProp.readText()
-                        }
-                    }
-                } else if (propLgzEntry != null && propText.isEmpty() && activeLgzBin != null) {
-                    val rawPropLgz = File(workDir, "prop.default.lgz")
-                    val decProp = File(workDir, "dec_prop")
-                    runSu("$mbPath cpio $cpioPath ${shQuote("extract $propLgzEntry ${rawPropLgz.absolutePath}")}")
-                    runSu("${shQuote(activeLgzBin.absolutePath)} decompress ${shQuote(rawPropLgz.absolutePath)} ${shQuote(decProp.absolutePath)} || ${shQuote(activeLgzBin.absolutePath)} -d ${shQuote(rawPropLgz.absolutePath)} ${shQuote(decProp.absolutePath)}")
-                    runSu("chmod 666 ${shQuote(decProp.absolutePath)}")
-                    if (decProp.isFile && decProp.length() > 0L) propText = decProp.readText()
                 }
 
-                // 3. Ищем бинарник twrp: напрямую в CPIO, в одиночном twrp.lgz (старые билды) или в большом кластере *.lgz (>10 МБ)
-                val directTwrpEntry = entries.firstOrNull {
-                    it == "system/bin/twrp" || it == "sbin/twrp" || it == "system/bin/twrp.lgz"
-                }
-                if (directTwrpEntry != null && twrpFile == null) {
-                    val rawTwrp = File(workDir, "raw_twrp")
-                    runSu("$mbPath cpio $cpioPath ${shQuote("extract $directTwrpEntry ${rawTwrp.absolutePath}")} && chmod 666 ${shQuote(rawTwrp.absolutePath)}")
-                    if (rawTwrp.isFile && Files.isSymbolicLink(rawTwrp.toPath())) {
-                        Log.d(TAG, "slot $slot: $directTwrpEntry extracted as symlink, deleting")
-                        rawTwrp.delete()
-                    }
-                    if (rawTwrp.isFile && rawTwrp.length() > 0L) {
-                        val header = rawTwrp.inputStream().use { ins -> ByteArray(4).also { ins.read(it) } }
-                        val isElf = header.size == 4 && header[0] == 0x7F.toByte() && header[1] == 'E'.code.toByte()
-                        if (isElf) {
-                            twrpFile = rawTwrp
-                        } else if (activeLgzBin != null) {
-                            val decTwrp = File(workDir, "dec_twrp")
-                            runSu("${shQuote(activeLgzBin.absolutePath)} decompress ${shQuote(rawTwrp.absolutePath)} ${shQuote(decTwrp.absolutePath)} || ${shQuote(activeLgzBin.absolutePath)} -d ${shQuote(rawTwrp.absolutePath)} ${shQuote(decTwrp.absolutePath)}")
-                            runSu("chmod 666 ${shQuote(decTwrp.absolutePath)}")
-                            if (decTwrp.isFile && decTwrp.length() > 0L) twrpFile = decTwrp
-                        }
-                    }
-                }
-
-                // 3b. Прямое извлечение twrp по имени (для старых билдов без кластера;
-                // файлы пожаты поштучно в UCOMP01).
+                // 3. twrp напрямую: один вызов extract+chmod, гейт isFile+length.
+                // UCOMP01-синглы старых билдов распаковываем найденным lgz-декодером.
                 if (twrpFile == null) {
-                    for (cand in listOf("system/bin/twrp", "sbin/twrp")) {
-                        val rawTwrp = File(workDir, "raw_twrp_direct")
-                        rawTwrp.delete()
-                        runSu("$mbPath cpio $cpioPath ${shQuote("extract $cand ${rawTwrp.absolutePath}")} && chmod 666 ${shQuote(rawTwrp.absolutePath)}")
-                        if (!rawTwrp.isFile || rawTwrp.length() == 0L ||
-                            Files.isSymbolicLink(rawTwrp.toPath())
-                        ) {
+                    val twrpCandidates = (entries.filter {
+                        it == "system/bin/twrp" || it == "sbin/twrp"
+                    }.sortedByDescending { it.length } + listOf(
+                        "system/bin/twrp",
+                        "sbin/twrp",
+                    )).distinct()
+
+                    for (cand in twrpCandidates) {
+                        val rawTwrp = File(workDir, "raw_twrp")
+                        runSu("$mbPath cpio $cpioPath ${shQuote("extract $cand ${rawTwrp.absolutePath}")} && chmod 666 ${shQuote(rawTwrp.absolutePath)}", timeoutSec = 20)
+                        if (rawTwrp.isFile && Files.isSymbolicLink(rawTwrp.toPath())) {
                             rawTwrp.delete()
                             continue
                         }
-                        val header7 = rawTwrp.inputStream().use { ins ->
-                            ByteArray(7).also { ins.read(it) }
-                        }
-                        if (header7.decodeToString() != "UCOMP01") {
+                        if (!rawTwrp.isFile || rawTwrp.length() == 0L) continue
+                        val header = ByteArray(7)
+                        val readLen = runCatching {
+                            rawTwrp.inputStream().use { it.read(header) }
+                        }.getOrDefault(-1)
+                        val isUcomp = readLen >= 7 && header.decodeToString() == "UCOMP01"
+                        if (!isUcomp) {
                             twrpFile = rawTwrp
-                            Log.d(TAG, "slot $slot: direct twrp -> $cand (plain)")
                             break
                         }
-                        val dec = activeLgzBin ?: bundledLgz
-                        if (dec != null) {
-                            val decTwrp = File(workDir, "dec_twrp_direct")
+                        if (activeLgzBin != null) {
+                            val decTwrp = File(workDir, "dec_twrp")
                             decTwrp.delete()
-                            runSu("${shQuote(dec.absolutePath)} decompress ${shQuote(rawTwrp.absolutePath)} ${shQuote(decTwrp.absolutePath)}")
-                            runSu("chmod 666 ${shQuote(decTwrp.absolutePath)}")
+                            runSu("${shQuote(activeLgzBin.absolutePath)} decompress ${shQuote(rawTwrp.absolutePath)} ${shQuote(decTwrp.absolutePath)} --no-meta || " +
+                                "${shQuote(activeLgzBin.absolutePath)} decompress ${shQuote(rawTwrp.absolutePath)} ${shQuote(decTwrp.absolutePath)} || " +
+                                "${shQuote(activeLgzBin.absolutePath)} -d ${shQuote(rawTwrp.absolutePath)} ${shQuote(decTwrp.absolutePath)}", timeoutSec = 25)
+                            runSu("chmod 666 ${shQuote(decTwrp.absolutePath)}", timeoutSec = 10)
                             if (decTwrp.isFile && decTwrp.length() > 0L) {
                                 twrpFile = decTwrp
-                                Log.d(TAG, "slot $slot: direct twrp -> $cand (UCOMP01 decompressed)")
                                 break
                             }
                         }
@@ -551,31 +529,45 @@ object RecoveryStateCache {
                     }
                 }
 
-                // 4. Проверяем кластер *.lgz (lgz_cluster.lgz или любой .lgz > 10 МБ)
-                val clusterEntries = entries.filter { it.endsWith(".lgz", ignoreCase = true) }
+                // 4. Кластер lgz (ТОЛЬКО файлы со словом "cluster", чтобы не перебирать сотни мелких .lgz)
+                val clusterEntries = (entries.filter {
+                    it.endsWith(".lgz", ignoreCase = true) && it.contains("cluster", ignoreCase = true)
+                } + listOf("lgz_cluster.lgz")).distinct()
+
                 for (clEntry in clusterEntries) {
                     if (twrpFile != null && propText.isNotEmpty()) break
-                    val clFile = File(workDir, clEntry.substringAfterLast('/'))
-                    runSu("$mbPath cpio $cpioPath ${shQuote("extract $clEntry ${clFile.absolutePath}")} && chmod 666 ${shQuote(clFile.absolutePath)}")
-                    if (!clFile.isFile || clFile.length() < 1_000_000L) continue
+                    val clFile = File(workDir, "cluster_archive.lgz")
+                    runCatching { Files.deleteIfExists(clFile.toPath()) }
+                    val (crc, _) = runSu("$mbPath cpio $cpioPath ${shQuote("extract $clEntry ${clFile.absolutePath}")}", timeoutSec = 25)
+                    if (crc != 0 || !deleteIfSymlinkOrInvalid(clFile) || clFile.length() < 1_000_000L) continue
+                    runSu("chmod 666 ${shQuote(clFile.absolutePath)}", timeoutSec = 10)
 
                     val lgzExec = bundledLgz ?: activeLgzBin ?: continue
                     val singleDir = File(workDir, "single_out").apply { mkdirs() }
                     if (twrpFile == null) {
-                        runSu("${shQuote(lgzExec.absolutePath)} extract ${shQuote(clFile.absolutePath)} system/bin/twrp ${shQuote(singleDir.absolutePath)} --flatten --no-meta && chmod 755 ${shQuote(singleDir.absolutePath)} && chmod 666 ${shQuote(singleDir.absolutePath)}/*")
+                        runSu(
+                            "${shQuote(lgzExec.absolutePath)} extract ${shQuote(clFile.absolutePath)} system/bin/twrp ${shQuote(singleDir.absolutePath)} --flatten --no-meta && " +
+                                "chmod -R 777 ${shQuote(singleDir.absolutePath)}",
+                            timeoutSec = 25,
+                        )
                         val extracted = File(singleDir, "twrp")
-                        if (extracted.isFile && extracted.length() > 0L) {
+                        if (deleteIfSymlinkOrInvalid(extracted)) {
                             twrpFile = extracted
                         }
                     }
                     if (propText.isEmpty()) {
-                        runSu("${shQuote(lgzExec.absolutePath)} extract ${shQuote(clFile.absolutePath)} prop.default ${shQuote(singleDir.absolutePath)} --flatten --no-meta && chmod 755 ${shQuote(singleDir.absolutePath)} && chmod 666 ${shQuote(singleDir.absolutePath)}/*")
+                        runSu(
+                            "${shQuote(lgzExec.absolutePath)} extract ${shQuote(clFile.absolutePath)} prop.default ${shQuote(singleDir.absolutePath)} --flatten --no-meta && " +
+                                "chmod -R 777 ${shQuote(singleDir.absolutePath)}",
+                            timeoutSec = 25,
+                        )
                         val extractedProp = File(singleDir, "prop.default")
-                        if (extractedProp.isFile && extractedProp.length() > 0L) {
-                            propText = extractedProp.readText()
+                        if (deleteIfSymlinkOrInvalid(extractedProp)) {
+                            propText = runCatching { extractedProp.readText() }.getOrDefault("")
                         }
                     }
                 }
+                Log.d(TAG, "slot $slot: cpio=${cpio.name} propLen=${propText.length} twrp=${twrpFile != null}")
             }
 
             val props = HashMap<String, String>()
@@ -622,8 +614,7 @@ object RecoveryStateCache {
 
             val (rawRomName, romVersion) = identifyRom(props)
             val romName = if (hasFoxProps) "OrangeFox" else rawRomName
-            val losBased = props.keys.any { it.contains("lineage", ignoreCase = true) } ||
-                propText.contains("lineage", ignoreCase = true)
+            val losBased = isLosProps
 
             val resolvedVersion = when {
                 !twrpVer.isNullOrBlank() -> twrpVer
@@ -654,7 +645,7 @@ object RecoveryStateCache {
                 checkedAtMs = System.currentTimeMillis(),
             )
         } finally {
-            runSu("rm -rf ${shQuote(workDir.absolutePath)}")
+            runSu("rm -rf ${shQuote(workDir.absolutePath)}", timeoutSec = 15)
             workDir.deleteRecursively()
         }
     }

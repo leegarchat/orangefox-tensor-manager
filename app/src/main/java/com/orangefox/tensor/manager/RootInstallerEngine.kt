@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.TimeUnit
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -113,38 +114,84 @@ object RootInstallerEngine {
     }
 
     suspend fun checkRootAccess(): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val proc = ProcessBuilder("su", "-c", "id")
-                .redirectErrorStream(true)
-                .start()
-            val out = proc.inputStream.bufferedReader().readText()
-            val code = proc.waitFor()
-            code == 0 && out.contains("uid=0")
+        val (rc, out) = runRootCommand("id", timeoutSec = 15)
+        rc == 0 && out.contains("uid=0")
+    }
+
+    internal fun shQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
+    internal fun readSystemProp(key: String): String {
+        return try {
+            val proc = ProcessBuilder("getprop", key).redirectErrorStream(true).start()
+            runCatching { proc.outputStream.close() }
+            val out = proc.inputStream.bufferedReader().use { it.readText().trim() }
+            proc.waitFor(5, TimeUnit.SECONDS)
+            out
         } catch (_: Exception) {
-            false
+            ""
         }
     }
 
-    private fun shQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+    internal fun readActiveSlotSuffix(): String {
+        val raw = readSystemProp("ro.boot.slot_suffix").removePrefix("_").lowercase(Locale.US)
+        return if (raw == "b") "b" else "a"
+    }
 
-    private fun runRootCommand(cmd: String): Pair<Int, String> {
+    /**
+     * Единый исполнитель root-команд с немедленным закрытием stdin и жёстким таймаутом.
+     */
+    internal fun runRootCommand(cmd: String, timeoutSec: Long = 120): Pair<Int, String> {
+        var proc: Process? = null
+        var reader: Thread? = null
         return try {
-            val proc = ProcessBuilder("su", "-c", cmd)
+            proc = ProcessBuilder("su", "-c", cmd)
                 .redirectErrorStream(true)
                 .start()
-            val out = proc.inputStream.bufferedReader().readText()
-            val rc = proc.waitFor()
-            rc to out.trim()
+            val p = proc
+            // Закрываем stdin сразу, чтобы ни один бинарник внутри su не ждал ввода
+            runCatching { p.outputStream.close() }
+            val sb = StringBuilder()
+            reader = Thread({
+                try {
+                    p.inputStream.bufferedReader().use { br ->
+                        var line: String?
+                        while (br.readLine().also { line = it } != null) {
+                            synchronized(sb) { sb.appendLine(line) }
+                        }
+                    }
+                } catch (_: Exception) {
+                }
+            }, "runRoot-reader").apply { isDaemon = true; start() }
+            val finished = try {
+                p.waitFor(timeoutSec, TimeUnit.SECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                false
+            }
+            if (!finished) {
+                p.destroyForcibly()
+                reader.join(2000)
+                return -1 to "su timeout after ${timeoutSec}s"
+            }
+            reader.join(5000)
+            val result = synchronized(sb) { sb.toString().trim() }
+            p.exitValue() to result
         } catch (e: Exception) {
             -1 to (e.message ?: "su execution error")
+        } finally {
+            if (proc != null && proc.isAlive) runCatching { proc.destroyForcibly() }
+            runCatching { proc?.inputStream?.close() }
+            runCatching { proc?.errorStream?.close() }
+            runCatching { reader?.join(500) }
         }
     }
 
     suspend fun getDeviceOverview(): Pair<String, String> = withContext(Dispatchers.IO) {
-        val (_, dev) = runRootCommand("getprop ro.product.device")
-        val (_, slotRaw) = runRootCommand("getprop ro.boot.slot_suffix")
-        val slot = slotRaw.trim().removePrefix("_").ifEmpty { "a" }
-        dev.trim().ifEmpty { "pixel" } to slot
+        val dev = readSystemProp("ro.product.device").ifEmpty {
+            runRootCommand("getprop ro.product.device", timeoutSec = 10).second
+        }.trim().ifEmpty { "pixel" }
+        val slot = readActiveSlotSuffix()
+        dev to slot
     }
 
     suspend fun rebootToRecovery(): Boolean = withContext(Dispatchers.IO) {
@@ -233,6 +280,38 @@ object RootInstallerEngine {
                 null
             }
         }.sortedByDescending { it.createdAtMs }
+    }
+
+    /**
+     * Удаляет все файлы приложения: импортированные установщики, бэкапы,
+     * распакованные окружения, кеш загрузок релизов и кеш инспектора.
+     * Настройки (AppPrefs) и кеш документации не трогает.
+     */
+    fun wipeAllAppFiles(context: Context) {
+        ReleasesSessionCache.cancelAllDownloads()
+        ReleasesSessionCache.downloads.keys.toList().forEach { key ->
+            (ReleasesSessionCache.downloads[key] as? AssetDl.Done)?.let { done ->
+                File(done.path).delete()
+                ReleasesSessionCache.downloads.remove(key)
+            }
+        }
+        getImportedDir(context).listFiles()?.forEach { it.deleteRecursively() }
+        getBackupsDir(context).listFiles()?.forEach { it.delete() }
+        File(context.filesDir, "installer_work").deleteRecursively()
+        File(context.filesDir, "inspector_bin").deleteRecursively()
+        File(context.filesDir, "recovery_slot_cache.json").delete()
+        context.cacheDir.listFiles()?.forEach { f ->
+            val n = f.name
+            val low = n.lowercase()
+            if (n.startsWith("slot_inspect_") || n.startsWith("verify_raw_") ||
+                n.startsWith("Picked_vendor_boot_") || n.startsWith("picked_touch_") ||
+                n.endsWith(".part") ||
+                (n.contains("__") && (low.endsWith(".zip") || low.endsWith(".img") || low.endsWith(".lz4")))
+            ) {
+                f.deleteRecursively()
+            }
+        }
+        invalidatePreparedAioCache()
     }
 
     fun deleteBackup(context: Context, entry: BackupEntry) {
@@ -597,40 +676,17 @@ object RootInstallerEngine {
         val flashed = mutableListOf<String>()
         for (slot in config.targetSlot.slots) {
             val stagedFile = stagedOutputs[slot] ?: stagedOutputs.values.first()
-            if (config.saveBackupBeforeFlash) {
-                val backup = createSlotBackup(context, slot, env.deviceCodename, ::log)
-                if (backup == null) {
-                    return@withContext InstallRunOutcome.Failure(
-                        message = context.getString(R.string.install_backup_before_fail, slot),
-                        logs = logs,
-                    )
-                }
-            }
-            val blockPath = "/dev/block/by-name/vendor_boot_$slot"
-            log(context.getString(R.string.log_setrw, blockPath))
-            runRootCommand("blockdev --setrw $blockPath")
-
-            log(context.getString(R.string.log_writing_image, blockPath))
-            val (flashRc, flashOut) = runRootCommand("dd if=${shQuote(stagedFile.absolutePath)} of=$blockPath bs=1048576")
-            if (flashRc != 0) {
-                return@withContext InstallRunOutcome.Failure(
-                    context.getString(R.string.install_dl_flash_failed, blockPath, flashOut),
-                    logs,
-                )
-            }
-
-            val checkFile = File(env.workDir, "verify_$slot.img")
-            val sizeBytes = stagedFile.length()
-            val blocksCount = ((sizeBytes + 1048575L) / 1048576L).coerceAtLeast(1L)
-            val (verifyRc, _) = runRootCommand(
-                "dd if=$blockPath of=${shQuote(checkFile.absolutePath)} bs=1048576 count=$blocksCount && head -c $sizeBytes ${shQuote(checkFile.absolutePath)} | cmp -s - ${shQuote(stagedFile.absolutePath)}"
+            val errMsg = flashAndVerifySlot(
+                context = context,
+                slot = slot,
+                deviceCodename = env.deviceCodename,
+                imageFile = stagedFile,
+                saveBackupBeforeFlash = config.saveBackupBeforeFlash,
+                checkPartitionSize = false,
+                onLog = ::log,
             )
-            checkFile.delete()
-            if (verifyRc != 0) {
-                return@withContext InstallRunOutcome.Failure(
-                    message = context.getString(R.string.install_dl_verify_failed, slot),
-                    logs = logs,
-                )
+            if (errMsg != null) {
+                return@withContext InstallRunOutcome.Failure(message = errMsg, logs = logs)
             }
             log(context.getString(R.string.log_slot_flashed_ok, slot))
             flashed.add(slot)
@@ -641,6 +697,59 @@ object RootInstallerEngine {
             savedDownloadsPaths = emptyList(),
             logs = logs,
         )
+    }
+
+    /**
+     * Общий атомарный шаг прошивки одного слота:
+     * опциональный бэкап -> проверка размера -> разблокировка ro/rw -> dd с fsync -> потоковая сверка cmp.
+     * Возвращает null при успехе или локализованный текст ошибки.
+     */
+    private suspend fun flashAndVerifySlot(
+        context: Context,
+        slot: String,
+        deviceCodename: String,
+        imageFile: File,
+        saveBackupBeforeFlash: Boolean,
+        checkPartitionSize: Boolean,
+        onLog: (String) -> Unit,
+    ): String? {
+        if (saveBackupBeforeFlash) {
+            val backup = createSlotBackup(context, slot, deviceCodename, onLog)
+            if (backup == null) {
+                return context.getString(R.string.install_backup_before_fail, slot)
+            }
+        }
+
+        val blockPath = "/dev/block/by-name/vendor_boot_$slot"
+        if (checkPartitionSize) {
+            val (_, bszOut) = runRootCommand("blockdev --getsize64 $blockPath", timeoutSec = 15)
+            val partSize = bszOut.toLongOrNull()?.takeIf { it > 0L } ?: DEFAULT_VENDOR_BOOT_PART_SIZE
+            if (imageFile.length() > partSize) {
+                return context.getString(R.string.install_raw_too_big, imageFile.length(), partSize)
+            }
+        }
+
+        onLog(context.getString(R.string.log_setrw, blockPath))
+        runRootCommand("blockdev --setrw $blockPath", timeoutSec = 15)
+
+        onLog(context.getString(R.string.log_writing_image, blockPath))
+        val (flashRc, flashOut) = runRootCommand(
+            "dd if=${shQuote(imageFile.absolutePath)} of=$blockPath bs=1048576 conv=fsync",
+            timeoutSec = 90,
+        )
+        if (flashRc != 0) {
+            return context.getString(R.string.install_dl_flash_failed, blockPath, flashOut)
+        }
+
+        val sizeBytes = imageFile.length()
+        val (verifyRc, _) = runRootCommand(
+            "head -c $sizeBytes $blockPath | cmp -s - ${shQuote(imageFile.absolutePath)}",
+            timeoutSec = 60,
+        )
+        if (verifyRc != 0) {
+            return context.getString(R.string.install_dl_verify_failed, slot)
+        }
+        return null
     }
 
     suspend fun flashRawImage(
@@ -668,51 +777,18 @@ object RootInstallerEngine {
         val flashed = mutableListOf<String>()
 
         for (slot in targetSlot.slots) {
-            if (!isBackupRestore && saveBackupBeforeFlash) {
-                val backup = createSlotBackup(context, slot, deviceCodename, ::log)
-                if (backup == null) {
-                    return@withContext InstallRunOutcome.Failure(
-                        context.getString(R.string.install_raw_nobackup_fail, slot),
-                        logs,
-                    )
-                }
-            }
-
-            val blockPath = "/dev/block/by-name/vendor_boot_$slot"
-            val (_, bszOut) = runRootCommand("blockdev --getsize64 $blockPath")
-            val partSize = bszOut.toLongOrNull()?.takeIf { it > 0L } ?: DEFAULT_VENDOR_BOOT_PART_SIZE
-            if (imageFile.length() > partSize) {
-                return@withContext InstallRunOutcome.Failure(
-                    context.getString(R.string.install_raw_too_big, imageFile.length(), partSize),
-                    logs,
-                )
-            }
-            log(context.getString(R.string.log_setrw, blockPath))
-            runRootCommand("blockdev --setrw $blockPath")
-
-            log(context.getString(R.string.log_writing_image, blockPath))
-            val (rc, out) = runRootCommand("dd if=${shQuote(imageFile.absolutePath)} of=$blockPath bs=1048576")
-            if (rc != 0) {
-                return@withContext InstallRunOutcome.Failure(
-                    context.getString(R.string.install_raw_write_fail, slot, out),
-                    logs,
-                )
-            }
-
-            val verifyTmp = File(context.cacheDir, "verify_raw_$slot.img")
-            val sizeBytes = imageFile.length()
-            val blocksCount = ((sizeBytes + 1048575L) / 1048576L).coerceAtLeast(1L)
-            val (cmpRc, _) = runRootCommand(
-                "dd if=$blockPath of=${shQuote(verifyTmp.absolutePath)} bs=1048576 count=$blocksCount && head -c $sizeBytes ${shQuote(verifyTmp.absolutePath)} | cmp -s - ${shQuote(imageFile.absolutePath)}"
+            val errMsg = flashAndVerifySlot(
+                context = context,
+                slot = slot,
+                deviceCodename = deviceCodename,
+                imageFile = imageFile,
+                saveBackupBeforeFlash = !isBackupRestore && saveBackupBeforeFlash,
+                checkPartitionSize = true,
+                onLog = ::log,
             )
-            verifyTmp.delete()
-            if (cmpRc != 0) {
-                return@withContext InstallRunOutcome.Failure(
-                    context.getString(R.string.install_raw_verify_fail, slot),
-                    logs,
-                )
+            if (errMsg != null) {
+                return@withContext InstallRunOutcome.Failure(errMsg, logs)
             }
-
             log(context.getString(R.string.log_slot_written_ok, slot))
             flashed.add(slot)
         }

@@ -74,11 +74,9 @@ import com.orangefox.tensor.manager.R
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.ConcurrentHashMap
 
-private val imageHttpClient = OkHttpClient()
 
 /**
  * Сессионный кэш изображений в оперативной памяти с дедупликацией параллельных запросов.
@@ -107,13 +105,13 @@ object SessionImageCache {
         }
 
         return try {
-            val bmp = withContext(Dispatchers.IO) {
+            val bmp = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
                 try {
                     val req = Request.Builder()
                         .url(url)
                         .header("User-Agent", "PixelOFoxApp")
                         .build()
-                    imageHttpClient.newCall(req).execute().use { resp ->
+                    com.orangefox.tensor.manager.sharedHttpClient.newCall(req).execute().use { resp ->
                         if (!resp.isSuccessful) return@use null
                         val bytes = resp.body?.bytes() ?: return@use null
                         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)

@@ -92,6 +92,12 @@ sealed interface InstallTargetRequest {
     data class FromBackup(val backup: BackupEntry) : InstallTargetRequest
 }
 
+sealed interface InstallDeleteRequest {
+    data class Imported(val file: File) : InstallDeleteRequest
+    data class Backup(val backup: BackupEntry) : InstallDeleteRequest
+    data class CachedAsset(val release: ReleaseInfo, val asset: ReleaseAsset) : InstallDeleteRequest
+}
+
 object InstallSubmenuSession {
     var activeTarget: InstallTargetRequest? = null
     var preparedEnv by mutableStateOf<PreparedAioEnv?>(null)
@@ -222,6 +228,7 @@ fun InstallScreen(
     onInstallBusyChange: (Boolean) -> Unit = {},
     submenuTarget: InstallTargetRequest?,
     onSubmenuTargetChange: (InstallTargetRequest?) -> Unit,
+    filesEpoch: Int = 0,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -229,6 +236,7 @@ fun InstallScreen(
 
     var backupRestoreDialogTarget by remember { mutableStateOf<BackupEntry?>(null) }
     var showNoRootDialog by remember { mutableStateOf(false) }
+    var pendingDeleteRequest by remember { mutableStateOf<InstallDeleteRequest?>(null) }
 
     var importedItems by remember { mutableStateOf(RootInstallerEngine.loadImportedItems(context)) }
     var backups by remember { mutableStateOf(RootInstallerEngine.loadBackups(context)) }
@@ -238,7 +246,7 @@ fun InstallScreen(
         backups = RootInstallerEngine.loadBackups(context)
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(filesEpoch) {
         ReleasesSessionCache.ensureLoaded(scope, context.cacheDir)
         refreshLocalLists()
     }
@@ -310,6 +318,29 @@ fun InstallScreen(
 
     if (showNoRootDialog) {
         RootRequiredDialog(onDismiss = { showNoRootDialog = false })
+    }
+
+    pendingDeleteRequest?.let { req ->
+        val fileName = when (req) {
+            is InstallDeleteRequest.Imported -> req.file.name
+            is InstallDeleteRequest.Backup -> "vendor_boot_${req.backup.sourceSlot}.img"
+            is InstallDeleteRequest.CachedAsset -> req.asset.name.substringAfterLast('/')
+        }
+        ConfirmDeleteDialog(
+            fileName = fileName,
+            onConfirm = {
+                pendingDeleteRequest = null
+                when (req) {
+                    is InstallDeleteRequest.Imported -> req.file.delete()
+                    is InstallDeleteRequest.Backup -> RootInstallerEngine.deleteBackup(context, req.backup)
+                    is InstallDeleteRequest.CachedAsset -> ReleasesSessionCache.deleteCachedAsset(
+                        context, req.release, req.asset, showToast = true,
+                    )
+                }
+                refreshLocalLists()
+            },
+            onDismiss = { pendingDeleteRequest = null },
+        )
     }
 
     backupRestoreDialogTarget?.let { backupEntry ->
@@ -433,30 +464,10 @@ fun InstallScreen(
                                 requestInstallWithRootCheck(req)
                             },
                             onCopyToDownloads = {
-                                scope.launch(Dispatchers.IO) {
-                                    try {
-                                        val saved = copyFileToPublicDownloads(context, item.file, item.name)
-                                        withContext(Dispatchers.Main) {
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.asset_copied_to_downloads, saved),
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
-                                    } catch (e: Exception) {
-                                        withContext(Dispatchers.Main) {
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.asset_copy_failed, e.message ?: ""),
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
-                                    }
-                                }
+                                ReleasesSessionCache.copyLocalFileToDownloads(context, item.file, item.name)
                             },
                             onDelete = {
-                                item.file.delete()
-                                refreshLocalLists()
+                                pendingDeleteRequest = InstallDeleteRequest.Imported(item.file)
                             },
                         )
                     }
@@ -487,30 +498,10 @@ fun InstallScreen(
                                 requestInstallWithRootCheck(InstallTargetRequest.FromBackup(backup))
                             },
                             onCopyToDownloads = {
-                                scope.launch(Dispatchers.IO) {
-                                    try {
-                                        val saved = copyFileToPublicDownloads(context, backup.file, backup.file.name)
-                                        withContext(Dispatchers.Main) {
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.asset_copied_to_downloads, saved),
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
-                                    } catch (e: Exception) {
-                                        withContext(Dispatchers.Main) {
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.asset_copy_failed, e.message ?: ""),
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
-                                    }
-                                }
+                                ReleasesSessionCache.copyLocalFileToDownloads(context, backup.file, backup.file.name)
                             },
                             onDelete = {
-                                RootInstallerEngine.deleteBackup(context, backup)
-                                refreshLocalLists()
+                                pendingDeleteRequest = InstallDeleteRequest.Backup(backup)
                             },
                         )
                     }
@@ -547,7 +538,12 @@ fun InstallScreen(
                                     downloads = downloads,
                                     onOpenRelease = { onOpenReleaseOnReleasesTab(rel.tag) },
                                     onDownload = { asset -> onStartDownload(rel, asset) },
-                                    onDelete = { asset -> onDeleteCachedAsset(rel, asset) },
+                                    onDelete = { asset ->
+                                        pendingDeleteRequest = InstallDeleteRequest.CachedAsset(rel, asset)
+                                    },
+                                    onCancelDownload = { asset ->
+                                        ReleasesSessionCache.cancelDownload(rel, asset)
+                                    },
                                     onCopyToDownloads = { asset -> onCopyCachedAssetToDownloads(rel, asset) },
                                     onInstall = { asset ->
                                         val done = downloads["${rel.tag}/${asset.name}"] as? AssetDl.Done
@@ -714,6 +710,7 @@ private fun ReleaseInstallCard(
     onDelete: (ReleaseAsset) -> Unit,
     onCopyToDownloads: (ReleaseAsset) -> Unit,
     onInstall: (ReleaseAsset) -> Unit,
+    onCancelDownload: (ReleaseAsset) -> Unit = {},
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(20.dp)),
@@ -770,6 +767,7 @@ private fun ReleaseInstallCard(
                     onDelete = { onDelete(asset) },
                     onCopyToDownloads = { onCopyToDownloads(asset) },
                     onInstall = { onInstall(asset) },
+                    onCancelDownload = { onCancelDownload(asset) },
                 )
             }
         }
@@ -967,6 +965,7 @@ private fun InstallerSubmenuView(
                 dest.outputStream().use { outs -> ins.copyTo(outs) }
             }
             withContext(Dispatchers.Main) {
+                customSourceImg?.delete()
                 customSourceImg = dest
             }
         }
@@ -989,6 +988,7 @@ private fun InstallerSubmenuView(
                 dest.outputStream().use { outs -> ins.copyTo(outs) }
             }
             withContext(Dispatchers.Main) {
+                customTouchLgz?.delete()
                 customTouchLgz = dest
             }
         }
@@ -1015,6 +1015,86 @@ private fun InstallerSubmenuView(
                 unpackError = err.message ?: "unpack failed"
                 isUnpacking = false
             }
+        }
+    }
+
+    fun launchInstallRun(useStrip16k: Boolean = strip16k) {
+        if (isRunningInstall) return
+        strip16k = useStrip16k
+        isRunningInstall = true
+        runOutcome = null
+        consoleLogs.clear()
+        val appendLog: (String) -> Unit = { line ->
+            scope.launch(Dispatchers.Main) { consoleLogs.add(line) }
+        }
+        scope.launch {
+            val outcome = try {
+                when (target) {
+                    is InstallTargetRequest.FromAioFile -> {
+                        val env = preparedEnv
+                        if (env == null) {
+                            InstallRunOutcome.Failure(
+                                message = context.getString(R.string.unpack_step_prepare_title),
+                                logs = consoleLogs.toList(),
+                            )
+                        } else {
+                            RootInstallerEngine.executeAioInstall(
+                                context = context,
+                                env = env,
+                                config = AioInstallConfig(
+                                    sourceMode = sourceMode,
+                                    customSourceImg = customSourceImg,
+                                    destinationMode = destinationMode,
+                                    targetSlot = targetSlot,
+                                    strip16k = useStrip16k,
+                                    saveBackupBeforeFlash = saveBackup,
+                                    touchMode = touchMode,
+                                    customTouchLgz = customTouchLgz,
+                                    minFreeMb = minFreeMb.toInt(),
+                                    layoutType = layoutType,
+                                ),
+                                onLog = appendLog,
+                            )
+                        }
+                    }
+                    is InstallTargetRequest.FromRawImgFile -> {
+                        RootInstallerEngine.flashRawImage(
+                            context = context,
+                            imageFile = target.imgFile,
+                            targetSlot = targetSlot,
+                            isBackupRestore = false,
+                            saveBackupBeforeFlash = saveBackup,
+                            onLog = appendLog,
+                        )
+                    }
+                    is InstallTargetRequest.FromBackup -> {
+                        RootInstallerEngine.flashRawImage(
+                            context = context,
+                            imageFile = target.backup.file,
+                            targetSlot = targetSlot,
+                            isBackupRestore = true,
+                            saveBackupBeforeFlash = false,
+                            onLog = appendLog,
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                val msg = e.message ?: e.toString()
+                appendLog(context.getString(R.string.install_unexpected_error, msg))
+                InstallRunOutcome.Failure(
+                    message = context.getString(R.string.install_unexpected_error, msg),
+                    logs = consoleLogs.toList(),
+                )
+            }
+            if (outcome is InstallRunOutcome.SpaceTightError) {
+                spaceErrorSeen = true
+                prefs.spaceErrorSeen = true
+            }
+            runOutcome = outcome
+            if (outcome is InstallRunOutcome.Success && outcome.flashedSlots.isNotEmpty()) {
+                RecoveryStateCache.refresh(context, scope, forceUnpack = false)
+            }
+            isRunningInstall = false
         }
     }
 
@@ -1234,35 +1314,7 @@ private fun InstallerSubmenuView(
                                 )
                                 if (env.supportsStrip16k && !strip16k) {
                                     Button(
-                                        onClick = {
-                                            strip16k = true
-                                            isRunningInstall = true
-                                            runOutcome = null
-                                            consoleLogs.clear()
-                                            scope.launch {
-                                                val retryOutcome = RootInstallerEngine.executeAioInstall(
-                                                    context = context,
-                                                    env = env,
-                                                    config = AioInstallConfig(
-                                                        sourceMode = sourceMode,
-                                                        customSourceImg = customSourceImg,
-                                                        destinationMode = destinationMode,
-                                                        targetSlot = targetSlot,
-                                                        strip16k = true,
-                                                        saveBackupBeforeFlash = saveBackup,
-                                                        touchMode = touchMode,
-                                                        customTouchLgz = customTouchLgz,
-                                                        minFreeMb = minFreeMb.toInt(),
-                                                        layoutType = layoutType,
-                                                    ),
-                                                    onLog = { line ->
-                                                        scope.launch(Dispatchers.Main) { consoleLogs.add(line) }
-                                                    },
-                                                )
-                                                runOutcome = retryOutcome
-                                                isRunningInstall = false
-                                            }
-                                        },
+                                        onClick = { launchInstallRun(useStrip16k = true) },
                                         shape = RoundedCornerShape(14.dp),
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = MaterialTheme.colorScheme.error,
@@ -1472,82 +1524,8 @@ private fun InstallerSubmenuView(
                     Button(
                         enabled = !isRunningInstall,
                         onClick = {
-                            isRunningInstall = true
-                            runOutcome = null
-                            consoleLogs.clear()
-                            scope.launch {
-                                val outcome = try {
-                                    when (target) {
-                                    is InstallTargetRequest.FromAioFile -> {
-                                        val env = preparedEnv!!
-                                        RootInstallerEngine.executeAioInstall(
-                                            context = context,
-                                            env = env,
-                                            config = AioInstallConfig(
-                                                sourceMode = sourceMode,
-                                                customSourceImg = customSourceImg,
-                                                destinationMode = destinationMode,
-                                                targetSlot = targetSlot,
-                                                strip16k = strip16k,
-                                                saveBackupBeforeFlash = saveBackup,
-                                                touchMode = touchMode,
-                                                customTouchLgz = customTouchLgz,
-                                                minFreeMb = minFreeMb.toInt(),
-                                                layoutType = layoutType,
-                                            ),
-                                            onLog = { line ->
-                                                scope.launch(Dispatchers.Main) { consoleLogs.add(line) }
-                                            },
-                                        )
-                                    }
-                                    is InstallTargetRequest.FromRawImgFile -> {
-                                        RootInstallerEngine.flashRawImage(
-                                            context = context,
-                                            imageFile = target.imgFile,
-                                            targetSlot = targetSlot,
-                                            isBackupRestore = false,
-                                            saveBackupBeforeFlash = saveBackup,
-                                            onLog = { line ->
-                                                scope.launch(Dispatchers.Main) { consoleLogs.add(line) }
-                                            },
-                                        )
-                                    }
-                                    is InstallTargetRequest.FromBackup -> {
-                                        RootInstallerEngine.flashRawImage(
-                                            context = context,
-                                            imageFile = target.backup.file,
-                                            targetSlot = targetSlot,
-                                            isBackupRestore = true,
-                                            saveBackupBeforeFlash = false,
-                                            onLog = { line ->
-                                                scope.launch(Dispatchers.Main) { consoleLogs.add(line) }
-                                            },
-                                        )
-                                    }
-                                }
-                                } catch (e: Exception) {
-                                    val msg = e.message ?: e.toString()
-                                    scope.launch(Dispatchers.Main) {
-                                        consoleLogs.add(
-                                            context.getString(R.string.install_unexpected_error, msg)
-                                        )
-                                    }
-                                    InstallRunOutcome.Failure(
-                                        message = context.getString(R.string.install_unexpected_error, msg),
-                                        logs = consoleLogs.toList(),
-                                    )
-                                }
-                                if (outcome is InstallRunOutcome.SpaceTightError) {
-                                    spaceErrorSeen = true
-                                    prefs.spaceErrorSeen = true
-                                }
-                                runOutcome = outcome
-                                if (outcome is InstallRunOutcome.Success && outcome.flashedSlots.isNotEmpty()) {
-                                    RecoveryStateCache.refresh(context, scope, forceUnpack = false)
-                                }
-                                isRunningInstall = false
-                            }
-                        },
+                            launchInstallRun(useStrip16k = strip16k)
+                                                },
                         shape = RoundedCornerShape(18.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.edgeOutline()),
                         modifier = Modifier

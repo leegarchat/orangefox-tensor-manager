@@ -28,7 +28,7 @@ class ReleaseCheckWorker(
         if (mode == ReleaseNotifyMode.None) return Result.success()
 
         return try {
-            val client = OkHttpClient()
+            val client = sharedHttpClient
             val req = Request.Builder()
                 .url("https://api.github.com/repos/leegarchat/twrp_device_google_pixels/releases")
                 .header("User-Agent", "PixelOFoxApp")

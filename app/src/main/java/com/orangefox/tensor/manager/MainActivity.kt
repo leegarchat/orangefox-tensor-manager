@@ -77,6 +77,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -88,6 +89,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -166,7 +168,7 @@ import kotlin.math.roundToInt
 private const val RELEASES_URL =
     "https://api.github.com/repos/leegarchat/twrp_device_google_pixels/releases"
 
-private val http = OkHttpClient()
+internal val sharedHttpClient = OkHttpClient()
 
 data class ReleaseAsset(
     val name: String,
@@ -200,11 +202,106 @@ sealed interface AssetDl {
 }
 
 object ReleasesSessionCache {
+    private val ioScope = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    private val downloadJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+    private val downloadCalls = mutableMapOf<String, okhttp3.Call>()
     var releases by mutableStateOf<List<ReleaseInfo>?>(null)
     var listError by mutableStateOf<String?>(null)
     var isRefreshing by mutableStateOf(false)
     val expanded = mutableStateMapOf<String, Boolean>()
     val downloads = mutableStateMapOf<String, AssetDl>()
+
+    fun startDownload(context: Context, r: ReleaseInfo, asset: ReleaseAsset) {
+        val key = "${r.tag}/${asset.name}"
+        if (downloads[key] is AssetDl.Downloading) return
+        val cacheDir = context.applicationContext.cacheDir
+        val safeName = asset.name.substringAfterLast('/').ifEmpty { "asset.bin" }
+        downloads[key] = AssetDl.Downloading(null)
+        val job = ioScope.launch {
+            try {
+                val dest = File(cacheDir, "${r.tag}__$safeName")
+                downloadAsset(
+                    url = asset.url,
+                    dest = dest,
+                    onProgress = { p -> downloads[key] = AssetDl.Downloading(p) },
+                    onCallCreated = { call -> downloadCalls[key] = call },
+                )
+                downloads.remove(key)
+                withContext(Dispatchers.Main) {
+                    downloads[key] = AssetDl.Done(dest.absolutePath)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                downloads.remove(key)
+                File(cacheDir, "${r.tag}__$safeName").delete()
+                throw e
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    downloads[key] = AssetDl.Error(e.message ?: "download failed")
+                }
+            } finally {
+                downloadCalls.remove(key)
+            }
+        }
+        downloadJobs[key] = job
+        job.invokeOnCompletion { downloadJobs.remove(key) }
+    }
+
+    fun cancelDownload(r: ReleaseInfo, asset: ReleaseAsset) {
+        val key = "${r.tag}/${asset.name}"
+        downloadCalls.remove(key)?.cancel()
+        downloadJobs.remove(key)?.cancel()
+        downloads.remove(key)
+    }
+
+    fun cancelAllDownloads() {
+        downloadCalls.values.forEach { runCatching { it.cancel() } }
+        downloadJobs.values.forEach { it.cancel() }
+        downloadCalls.clear()
+        downloadJobs.clear()
+        downloads.keys.toList().forEach { key ->
+            if (downloads[key] is AssetDl.Downloading) downloads.remove(key)
+        }
+    }
+
+    fun deleteCachedAsset(context: Context, r: ReleaseInfo, asset: ReleaseAsset, showToast: Boolean = false) {
+        val key = "${r.tag}/${asset.name}"
+        val done = downloads[key] as? AssetDl.Done ?: return
+        File(done.path).delete()
+        downloads.remove(key)
+        if (showToast) {
+            Toast.makeText(context, context.getString(R.string.asset_deleted), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun copyLocalFileToDownloads(context: Context, sourceFile: File, displayName: String) {
+        val appCtx = context.applicationContext
+        ioScope.launch {
+            try {
+                val saved = copyFileToPublicDownloads(appCtx, sourceFile, displayName)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        appCtx,
+                        appCtx.getString(R.string.asset_copied_to_downloads, saved),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        appCtx,
+                        appCtx.getString(R.string.asset_copy_failed, e.message ?: ""),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        }
+    }
+
+    fun copyCachedAssetToDownloads(context: Context, r: ReleaseInfo, asset: ReleaseAsset) {
+        val key = "${r.tag}/${asset.name}"
+        val done = downloads[key] as? AssetDl.Done ?: return
+        copyLocalFileToDownloads(context, File(done.path), asset.name)
+    }
 
     fun ensureLoaded(scope: CoroutineScope, cacheDir: File) {
         if (releases != null || isRefreshing) return
@@ -248,7 +345,7 @@ private fun fetchReleases(): List<ReleaseInfo> {
         .header("User-Agent", "PixelOFoxApp")
         .header("Accept", "application/vnd.github+json")
         .build().let { req ->
-            http.newCall(req).execute().use { resp ->
+            sharedHttpClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) error("releases HTTP ${resp.code}")
                 val text = resp.body?.string() ?: error("empty releases")
                 val arr = JSONArray(text)
@@ -299,12 +396,15 @@ private fun downloadAsset(
     url: String,
     dest: File,
     onProgress: (Float?) -> Unit,
+    onCallCreated: (okhttp3.Call) -> Unit = {},
 ): File {
     val partFile = File(dest.parentFile, "${dest.name}.part")
     Request.Builder().url(url)
         .header("User-Agent", "PixelOFoxApp")
         .build().let { req ->
-            http.newCall(req).execute().use { resp ->
+            val call = sharedHttpClient.newCall(req)
+            onCallCreated(call)
+            call.execute().use { resp ->
                 if (!resp.isSuccessful) error("download HTTP ${resp.code}")
                 val body = resp.body ?: error("empty body")
                 val total = body.contentLength()
@@ -511,6 +611,7 @@ fun Root(
     var installBusy by remember { mutableStateOf(false) }
     // Подменю установщика живёт в Root, чтобы переживать переключение вкладок.
     var installSubmenuTarget by remember { mutableStateOf<InstallTargetRequest?>(null) }
+    var filesEpoch by remember { mutableStateOf(0) }
     var focusReleaseTag by rememberSaveable { mutableStateOf<String?>(null) }
     val homeNav = remember { HomeNavState() }
     val homeChips = remember { HomeChipsState() }
@@ -528,60 +629,6 @@ fun Root(
     val floatingFilesState = remember { FloatingFilesButtonState() }
     LaunchedEffect(Unit) {
         RecoveryStateCache.ensureLoadedOnStartup(context, scope)
-    }
-
-    fun startDownloadAsset(r: ReleaseInfo, asset: ReleaseAsset) {
-        val key = "${r.tag}/${asset.name}"
-        if (ReleasesSessionCache.downloads[key] is AssetDl.Downloading) return
-        ReleasesSessionCache.downloads[key] = AssetDl.Downloading(null)
-        scope.launch(Dispatchers.IO) {
-            try {
-                val safeName = asset.name.substringAfterLast('/').ifEmpty { "asset.bin" }
-                val dest = File(context.cacheDir, "${r.tag}__$safeName")
-                downloadAsset(asset.url, dest) { p ->
-                    ReleasesSessionCache.downloads[key] = AssetDl.Downloading(p)
-                }
-                withContext(Dispatchers.Main) {
-                    ReleasesSessionCache.downloads[key] = AssetDl.Done(dest.absolutePath)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    ReleasesSessionCache.downloads[key] = AssetDl.Error(e.message ?: "download failed")
-                }
-            }
-        }
-    }
-
-    fun deleteCachedAsset(r: ReleaseInfo, asset: ReleaseAsset) {
-        val key = "${r.tag}/${asset.name}"
-        val done = ReleasesSessionCache.downloads[key] as? AssetDl.Done ?: return
-        File(done.path).delete()
-        ReleasesSessionCache.downloads.remove(key)
-    }
-
-    fun copyCachedAsset(r: ReleaseInfo, asset: ReleaseAsset) {
-        val key = "${r.tag}/${asset.name}"
-        val done = ReleasesSessionCache.downloads[key] as? AssetDl.Done ?: return
-        scope.launch(Dispatchers.IO) {
-            try {
-                val saved = copyFileToPublicDownloads(context, File(done.path), asset.name)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.asset_copied_to_downloads, saved),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.asset_copy_failed, e.message ?: ""),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            }
-        }
     }
 
     Surface(
@@ -666,12 +713,13 @@ fun Root(
                                 tab = Tab.Releases
                                 focusReleaseTag = tag
                             },
-                            onStartDownload = { rel, asset -> startDownloadAsset(rel, asset) },
-                            onDeleteCachedAsset = { rel, asset -> deleteCachedAsset(rel, asset) },
-                            onCopyCachedAssetToDownloads = { rel, asset -> copyCachedAsset(rel, asset) },
+                            onStartDownload = { rel, asset -> ReleasesSessionCache.startDownload(context, rel, asset) },
+                            onDeleteCachedAsset = { rel, asset -> ReleasesSessionCache.deleteCachedAsset(context, rel, asset, showToast = false) },
+                            onCopyCachedAssetToDownloads = { rel, asset -> ReleasesSessionCache.copyCachedAssetToDownloads(context, rel, asset) },
                             onInstallBusyChange = { installBusy = it },
                             submenuTarget = installSubmenuTarget,
                             onSubmenuTargetChange = { installSubmenuTarget = it },
+                            filesEpoch = filesEpoch,
                         )
                         Tab.Settings -> SettingsScreen(
                             topInset = topBarH + 8.dp,
@@ -687,6 +735,19 @@ fun Root(
                             onCollapseH2HomeChange = onCollapseH2HomeChange,
                             releaseNotifyMode = releaseNotifyMode,
                             onReleaseNotifyModeChange = onReleaseNotifyModeChange,
+                            onWipeAllFiles = {
+                                scope.launch(Dispatchers.IO) {
+                                    RootInstallerEngine.wipeAllAppFiles(context)
+                                    withContext(Dispatchers.Main) {
+                                        filesEpoch++
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.wipe_done_toast),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
+                            },
                         )
                     }
                 }
@@ -838,12 +899,9 @@ fun Root(
                     )
 
                     BottomBlurBar(
-                        modifier = Modifier.graphicsLayer {
-                            scaleX = pressScale
-                            scaleY = pressScale
-                        },
                         blurState = blurState,
                         blurRadius = blurRadius,
+                        scale = pressScale,
                         shape = RoundedCornerShape(24.dp),
                     ) {
                         Row(
@@ -972,10 +1030,10 @@ fun Root(
             val tabBounds = remember { mutableStateMapOf<Tab, ClosedFloatingPointRange<Float>>() }
 
             val dockScale by animateFloatAsState(
-                targetValue = if (isDockPressed) 1.045f else 1f,
+                targetValue = if (isDockPressed) 1.032f else 1f,
                 animationSpec = spring(
-                    stiffness = Spring.StiffnessMedium,
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = 260f,
+                    dampingRatio = 0.78f,
                 ),
                 label = "DockBounceScale",
             )
@@ -983,13 +1041,10 @@ fun Root(
             BottomBlurBar(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp)
-                    .graphicsLayer {
-                        scaleX = dockScale
-                        scaleY = dockScale
-                    },
+                    .padding(bottom = 24.dp),
                 blurState = blurState,
                 blurRadius = blurRadius,
+                scale = dockScale,
                 shape = CircleShape,
             ) {
                 fun resolveTabAtX(x: Float): Tab? {
@@ -1060,14 +1115,14 @@ fun Root(
 
                         val itemScale by animateFloatAsState(
                             targetValue = when {
-                                isFingerHere && selected -> 0.94f
-                                isFingerHere -> 1.08f
-                                selected && isDockPressed -> 1.03f
+                                isFingerHere && selected -> 0.96f
+                                isFingerHere -> 1.05f
+                                selected && isDockPressed -> 1.02f
                                 else -> 1f
                             },
                             animationSpec = spring(
-                                stiffness = Spring.StiffnessMedium,
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = 280f,
+                                dampingRatio = 0.78f,
                             ),
                             label = "TabItemBounce",
                         )
@@ -1078,7 +1133,7 @@ fun Root(
                                 isFingerHere -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.75f)
                                 else -> Color.Transparent
                             },
-                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                            animationSpec = tween(220, easing = FastOutSlowInEasing),
                             label = "TabBgColor",
                         )
                         val contentTint by animateColorAsState(
@@ -1093,8 +1148,8 @@ fun Root(
                         val horizontalPad by animateDpAsState(
                             targetValue = if (selected) 16.dp else 14.dp,
                             animationSpec = spring(
-                                stiffness = Spring.StiffnessMedium,
-                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                stiffness = 300f,
+                                dampingRatio = 0.85f,
                             ),
                             label = "TabHorizontalPadding",
                         )
@@ -1131,16 +1186,16 @@ fun Root(
                             )
                             AnimatedVisibility(
                                 visible = selected,
-                                enter = fadeIn(tween(180)) + expandHorizontally(
+                                enter = fadeIn(tween(220)) + expandHorizontally(
                                     animationSpec = spring(
-                                        stiffness = Spring.StiffnessMedium,
-                                        dampingRatio = Spring.DampingRatioLowBouncy,
+                                        stiffness = 320f,
+                                        dampingRatio = 0.85f,
                                     ),
                                     expandFrom = Alignment.Start,
                                 ),
-                                exit = fadeOut(tween(120)) + shrinkHorizontally(
+                                exit = fadeOut(tween(160)) + shrinkHorizontally(
                                     animationSpec = spring(
-                                        stiffness = Spring.StiffnessMedium,
+                                        stiffness = 320f,
                                         dampingRatio = Spring.DampingRatioNoBouncy,
                                     ),
                                     shrinkTowards = Alignment.Start,
@@ -1213,10 +1268,56 @@ private fun SettingsScreen(
     onCollapseH2HomeChange: (Boolean) -> Unit,
     releaseNotifyMode: ReleaseNotifyMode,
     onReleaseNotifyModeChange: (ReleaseNotifyMode) -> Unit,
+    onWipeAllFiles: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val haptics = LocalHapticFeedback.current
+    var showWipeConfirm by remember { mutableStateOf(false) }
+
+    if (showWipeConfirm) {
+        AlertDialog(
+            onDismissRequest = { showWipeConfirm = false },
+            shape = RoundedCornerShape(22.dp),
+            title = {
+                Text(
+                    text = stringResource(R.string.wipe_confirm_title),
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.wipe_confirm_text),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showWipeConfirm = false
+                        onWipeAllFiles()
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.edgeOutline()),
+                ) {
+                    Text(
+                        text = stringResource(R.string.action_delete),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWipeConfirm = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
 
     LazyColumn(
         state = listState,
@@ -1497,6 +1598,26 @@ private fun SettingsScreen(
         }
 
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { showWipeConfirm = true },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.edgeOutline()),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = stringResource(R.string.action_wipe_all_files),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+
+        item {
             val uriHandler = LocalUriHandler.current
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -1582,25 +1703,6 @@ private fun SettingSwitchRow(
     }
 }
 
-@Composable
-private fun StubScreen(
-    @androidx.annotation.StringRes title: Int,
-    topInset: Dp,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = topInset, start = 24.dp, end = 24.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text(
-            text = stringResource(title),
-            style = MaterialTheme.typography.headlineMedium,
-        )
-        Text(stringResource(R.string.stub_soon))
-    }
-}
-
 private data class CardViewportMetrics(
     val cardBoundsInRoot: Rect = Rect.Zero,
     val anchorBoundsInRoot: Rect = Rect.Zero,
@@ -1679,66 +1781,8 @@ fun ReleasesScreen(
         }
     }
 
-    fun startDownload(r: ReleaseInfo, asset: ReleaseAsset) {
-        val key = "${r.tag}/${asset.name}"
-        if (downloads[key] is AssetDl.Downloading) return
-        downloads[key] = AssetDl.Downloading(null)
-        scope.launch(Dispatchers.IO) {
-            try {
-                val safeName = asset.name.substringAfterLast('/').ifEmpty { "asset.bin" }
-                val dest = File(cacheDir, "${r.tag}__$safeName")
-                downloadAsset(asset.url, dest) { p ->
-                    downloads[key] = AssetDl.Downloading(p)
-                }
-                withContext(Dispatchers.Main) {
-                    downloads[key] = AssetDl.Done(dest.absolutePath)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    downloads[key] = AssetDl.Error(e.message ?: "download failed")
-                }
-            }
-        }
-    }
-
-    fun deleteAsset(r: ReleaseInfo, asset: ReleaseAsset) {
-        val key = "${r.tag}/${asset.name}"
-        val done = downloads[key] as? AssetDl.Done ?: return
-        File(done.path).delete()
-        downloads.remove(key)
-        Toast.makeText(context, context.getString(R.string.asset_deleted), Toast.LENGTH_SHORT).show()
-    }
-
-    fun copyAssetToDownloads(r: ReleaseInfo, asset: ReleaseAsset) {
-        val key = "${r.tag}/${asset.name}"
-        val done = downloads[key] as? AssetDl.Done ?: return
-        scope.launch(Dispatchers.IO) {
-            try {
-                val savedPath = copyFileToPublicDownloads(
-                    context = context,
-                    sourceFile = File(done.path),
-                    displayFileName = asset.name,
-                )
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.asset_copied_to_downloads, savedPath),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.asset_copy_failed, e.message ?: ""),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            }
-        }
-    }
-
     var scrollingToFiles by remember { mutableStateOf(false) }
+    var pendingDeleteAsset by remember { mutableStateOf<Pair<ReleaseInfo, ReleaseAsset>?>(null) }
     val haptics = LocalHapticFeedback.current
 
     val targetRelease: ReleaseInfo? by remember(filteredReleases, topInsetPx) {
@@ -1916,9 +1960,10 @@ fun ReleasesScreen(
                                 )
                             },
                             downloads = downloads,
-                            onDownload = { asset -> startDownload(r, asset) },
-                            onDeleteAsset = { asset -> deleteAsset(r, asset) },
-                            onCopyToDownloads = { asset -> copyAssetToDownloads(r, asset) },
+                            onCancelDownload = { asset -> ReleasesSessionCache.cancelDownload(r, asset) },
+                            onDownload = { asset -> ReleasesSessionCache.startDownload(context, r, asset) },
+                            onDeleteAsset = { asset -> pendingDeleteAsset = r to asset },
+                            onCopyToDownloads = { asset -> ReleasesSessionCache.copyCachedAssetToDownloads(context, r, asset) },
                             onInstallAsset = { asset -> onInstallAsset(r, asset) },
                         )
                     }
@@ -1935,6 +1980,17 @@ fun ReleasesScreen(
         LaunchedEffect(scrollingToFiles) {
             floatingFilesState.isScrolling = scrollingToFiles
         }
+
+        pendingDeleteAsset?.let { (rel, asset) ->
+            ConfirmDeleteDialog(
+                fileName = asset.name.substringAfterLast('/'),
+                onConfirm = {
+                    pendingDeleteAsset = null
+                    ReleasesSessionCache.deleteCachedAsset(context, rel, asset, showToast = true)
+                },
+                onDismiss = { pendingDeleteAsset = null },
+            )
+        }
         val currentScrollToAnchor by androidx.compose.runtime.rememberUpdatedState(
             newValue = { rel: ReleaseInfo -> scrollToAnchorCentered(rel) }
         )
@@ -1950,6 +2006,53 @@ fun ReleasesScreen(
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
+internal fun ConfirmDeleteDialog(
+    fileName: String,
+    title: String = stringResource(R.string.delete_confirm_title),
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(22.dp),
+        title = {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Text(
+                text = stringResource(R.string.delete_confirm_text, fileName),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.edgeOutline()),
+            ) {
+                Text(
+                    text = stringResource(R.string.action_delete),
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        },
+    )
+}
+
+@Composable
 private fun ReleaseCard(
     info: ReleaseInfo,
     isExpanded: Boolean,
@@ -1964,6 +2067,7 @@ private fun ReleaseCard(
     onDeleteAsset: (ReleaseAsset) -> Unit,
     onCopyToDownloads: (ReleaseAsset) -> Unit,
     onInstallAsset: (ReleaseAsset) -> Unit,
+    onCancelDownload: (ReleaseAsset) -> Unit,
 ) {
     // 1. Фиксированный боковой отступ (8.dp) сохраняет неизменную ширину карточки:
     // текст Markdown, спойлеры и таблицы измеряются ровно 1 раз и не вызывают покадрового
@@ -2132,6 +2236,7 @@ private fun ReleaseCard(
                                     onDeleteAsset = onDeleteAsset,
                                     onCopyToDownloads = onCopyToDownloads,
                                     onInstallAsset = onInstallAsset,
+                                    onCancelDownload = onCancelDownload,
                                 )
                             }
                         }
@@ -2223,6 +2328,7 @@ private fun ReleaseAssetsSection(
     onDeleteAsset: (ReleaseAsset) -> Unit,
     onCopyToDownloads: (ReleaseAsset) -> Unit,
     onInstallAsset: (ReleaseAsset) -> Unit,
+    onCancelDownload: (ReleaseAsset) -> Unit,
 ) {
     val borderColor by animateColorAsState(
         targetValue = if (isHighlighted) {
@@ -2293,6 +2399,7 @@ private fun ReleaseAssetsSection(
                             onDelete = { onDeleteAsset(asset) },
                             onCopyToDownloads = { onCopyToDownloads(asset) },
                             onInstall = { onInstallAsset(asset) },
+                            onCancelDownload = { onCancelDownload(asset) },
                         )
                     }
                 }
@@ -2309,6 +2416,7 @@ internal fun AssetRow(
     onDelete: () -> Unit,
     onCopyToDownloads: () -> Unit,
     onInstall: () -> Unit,
+    onCancelDownload: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -2409,20 +2517,43 @@ internal fun AssetRow(
                 }
             }
             is AssetDl.Downloading -> {
-                if (state.progress != null) {
-                    com.orangefox.tensor.manager.ui.ExpressiveLinearProgress(progress = state.progress)
-                    Text(
-                        text = stringResource(R.string.asset_downloading, (state.progress * 100).toInt()),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                    )
-                } else {
-                    com.orangefox.tensor.manager.ui.ExpressiveLinearProgress()
-                    Text(
-                        text = stringResource(R.string.asset_downloading_indeterminate),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        if (state.progress != null) {
+                            com.orangefox.tensor.manager.ui.ExpressiveLinearProgress(progress = state.progress)
+                            Text(
+                                text = stringResource(R.string.asset_downloading, (state.progress * 100).toInt()),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        } else {
+                            com.orangefox.tensor.manager.ui.ExpressiveLinearProgress()
+                            Text(
+                                text = stringResource(R.string.asset_downloading_indeterminate),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
+                        shape = CircleShape,
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onCancelDownload),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_close),
+                                contentDescription = stringResource(R.string.action_cancel_download),
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
                 }
             }
             is AssetDl.Error -> {

@@ -148,22 +148,35 @@ fun Modifier.recordLayer(
 }
 
 /**
- * Отрисовывает вырез (маску) из уже готового [state.sharedBlurNode] со сдвигом [-offset].
+ * Отрисовывает вырез (маску) из уже готового [state.sharedBlurNode].
+ * При [scale] != 1 внешняя капсула растёт, а текстура блюра остаётся 1:1 с экраном:
+ * применяется обратная матрица 1/s вокруг центра элемента.
  * Не создаёт новых RenderNode и не дублирует RenderEffect!
  */
 @RequiresApi(Build.VERSION_CODES.S)
 private fun Modifier.renderLayerAt(
     state: GraphicsLayerRecordingState,
-    offsetProvider: () -> Offset,
+    regionProvider: () -> Rect,
+    scaleProvider: () -> Float = { 1f },
 ): Modifier = this.drawBehind {
     val blurNode = state.sharedBlurNode ?: return@drawBehind
     if (!blurNode.hasDisplayList()) return@drawBehind
-    val offset = offsetProvider()
+    val region = regionProvider()
+    val s = scaleProvider().coerceAtLeast(0.01f)
 
     drawIntoCanvas { canvas ->
         val native = canvas.nativeCanvas
         val saveCount = native.save()
-        native.translate(-offset.x, -offset.y)
+        if (kotlin.math.abs(s - 1f) > 0.001f) {
+            // Компенсируем внешний scale(s, s) вокруг центра элемента:
+            // маска капсулы расширяется на s, а текстура блюра остаётся 1:1 с экраном!
+            val centerInRoot = region.center
+            native.translate(size.width * 0.5f, size.height * 0.5f)
+            native.scale(1f / s, 1f / s)
+            native.translate(-centerInRoot.x, -centerInRoot.y)
+        } else {
+            native.translate(-region.left, -region.top)
+        }
         native.drawRenderNode(blurNode)
         native.restoreToCount(saveCount)
     }
@@ -177,9 +190,6 @@ private fun frostedVeilAlpha(blurRadius: Float, minVeilAlpha: Float): Float {
     val t = ((20f - blurRadius) / 20f).coerceIn(0f, 1f)
     return minVeilAlpha + (1f - minVeilAlpha) * t
 }
-
-private fun lowBlurTint(blurRadius: Float): Float =
-    ((10f - blurRadius) / 10f).coerceIn(0f, 1f)
 
 @Composable
 fun TopBarBlurOverlay(
@@ -213,7 +223,7 @@ fun TopBarBlurOverlay(
                     }
                     .renderLayerAt(
                         state = blurState,
-                        offsetProvider = { Offset(region.left, region.top) },
+                        regionProvider = { region },
                     )
             )
 
@@ -237,6 +247,7 @@ fun BottomBlurBar(
     modifier: Modifier = Modifier,
     blurState: GraphicsLayerRecordingState,
     blurRadius: Float,
+    scale: Float = 1f,
     shape: Shape = CircleShape,
     content: @Composable () -> Unit,
 ) {
@@ -248,11 +259,15 @@ fun BottomBlurBar(
 
     Box(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(shape)
             .border(width = 1.dp, color = borderColor, shape = shape)
             .animateContentSize(
                 animationSpec = spring(
-                    stiffness = Spring.StiffnessHigh,
+                    stiffness = 380f,
                     dampingRatio = Spring.DampingRatioNoBouncy,
                 )
             ),
@@ -278,7 +293,8 @@ fun BottomBlurBar(
                     }
                     .renderLayerAt(
                         state = blurState,
-                        offsetProvider = { Offset(region.left, region.top) },
+                        regionProvider = { region },
+                        scaleProvider = { scale },
                     )
             )
 

@@ -184,6 +184,13 @@
     <string name="recovery_no_root_cached_warn">Рут-права не предоставлены! Показана последняя сохранённая информация — не факт, что сейчас у вас установлено именно это.</string>
     <string name="recovery_no_root_empty">Для определения установленного рекавери требуются root-права.</string>
     <string name="action_recheck_recovery">Обновить</string>
+    <string name="delete_confirm_title">Удалить этот файл?</string>
+    <string name="delete_confirm_text">«%1$s» будет удалён без возможности восстановления.</string>
+    <string name="wipe_confirm_title">Удалить все файлы?</string>
+    <string name="wipe_confirm_text">Все загруженные установщики, бэкапы и кешированные релизы будут удалены без возможности восстановления. Настройки сохранятся.</string>
+    <string name="action_wipe_all_files">Удалить все файлы</string>
+    <string name="wipe_done_toast">Все файлы приложения удалены</string>
+    <string name="action_cancel_download">Отменить загрузку</string>
     <string name="recovery_custom_title">Рекавери %1$s</string>
     <string name="recovery_base_fmt">%1$s · From: %2$s</string>
     <string name="recovery_base_los">LOS Based</string>

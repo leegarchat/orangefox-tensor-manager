@@ -87,12 +87,6 @@ internal fun Color.edgeOutline(alpha: Float = 0.45f): Color {
     return shifted.copy(alpha = alpha)
 }
 
-private fun Color.lighten(amount: Float = 0.3f): Color = copy(
-    red = (red + (1f - red) * amount).coerceIn(0f, 1f),
-    green = (green + (1f - green) * amount).coerceIn(0f, 1f),
-    blue = (blue + (1f - blue) * amount).coerceIn(0f, 1f),
-)
-
 @Composable
 fun <T> ExpressiveSegmentedRow(
     items: List<T>,

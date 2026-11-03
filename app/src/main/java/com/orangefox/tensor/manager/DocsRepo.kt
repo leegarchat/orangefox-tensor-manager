@@ -9,7 +9,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import java.io.File
@@ -22,7 +21,7 @@ private const val DOCS_RAW_BASE = "https://raw.githubusercontent.com/$DOCS_OWNER
 private const val DOCS_API_BASE = "https://api.github.com/repos/$DOCS_OWNER/$DOCS_REPO/contents"
 private const val DOCS_REFRESH_INTERVAL_MS = 24L * 60L * 60L * 1000L
 
-private val docsHttp = OkHttpClient()
+
 
 data class DocInfo(
     val id: String,
@@ -166,7 +165,7 @@ private fun fetchDocsList(): List<DocInfo> {
         .header("User-Agent", "PixelOFoxApp")
         .header("Accept", "application/vnd.github+json")
         .build()
-    docsHttp.newCall(req).execute().use { resp ->
+    sharedHttpClient.newCall(req).execute().use { resp ->
         // 403 (rate limit) и прочие HTTP-ошибки — бросаем исключение, чтобы refresh()
         // откатился на дисковый кэш и НЕ затирал полный список двумя fallback-README.
         if (!resp.isSuccessful) error("docs list HTTP ${resp.code}")
@@ -207,7 +206,7 @@ private fun downloadText(url: String): String {
         .url(url)
         .header("User-Agent", "PixelOFoxApp")
         .build()
-    docsHttp.newCall(req).execute().use { resp ->
+    sharedHttpClient.newCall(req).execute().use { resp ->
         if (!resp.isSuccessful) error("docs HTTP ${resp.code}")
         return resp.body?.string() ?: error("empty doc")
     }
