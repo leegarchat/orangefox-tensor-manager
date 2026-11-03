@@ -169,7 +169,7 @@
     <string name="recovery_status_title">Installed Recovery</string>
     <string name="recovery_slot_label">Slot %1$s</string>
     <string name="recovery_slot_active_badge">ACTIVE</string>
-    <string name="recovery_type_my_ofox">OrangeFox Official (Leegar)</string>
+    <string name="recovery_type_my_ofox">OrangeFox (LeegarChat build)</string>
     <string name="recovery_type_other_ofox">OrangeFox (Unofficial / Other)</string>
     <string name="recovery_type_twrp">TWRP Recovery</string>
     <string name="recovery_type_los">LineageOS Recovery</string>

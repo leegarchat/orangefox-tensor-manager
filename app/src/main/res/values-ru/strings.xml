@@ -172,7 +172,7 @@
     <string name="recovery_status_title">Установленный Recovery</string>
     <string name="recovery_slot_label">Слот %1$s</string>
     <string name="recovery_slot_active_badge">АКТИВЕН</string>
-    <string name="recovery_type_my_ofox">OrangeFox (Мой билд • Leegar)</string>
+    <string name="recovery_type_my_ofox">OrangeFox (билд LeegarChat)</string>
     <string name="recovery_type_other_ofox">OrangeFox (Сторонний билд)</string>
     <string name="recovery_type_twrp">TWRP Recovery</string>
     <string name="recovery_type_los">LineageOS Recovery</string>
