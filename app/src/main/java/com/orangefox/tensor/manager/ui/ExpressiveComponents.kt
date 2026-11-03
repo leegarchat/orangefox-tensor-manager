@@ -56,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -67,6 +68,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.orangefox.tensor.manager.R
+
+/**
+ * Осветление цвета для микрообводки (даёт объём, в гармонии с float-барами).
+ */
+internal fun Color.lighten(amount: Float = 0.3f): Color = copy(
+    red = (red + (1f - red) * amount).coerceIn(0f, 1f),
+    green = (green + (1f - green) * amount).coerceIn(0f, 1f),
+    blue = (blue + (1f - blue) * amount).coerceIn(0f, 1f),
+)
 
 @Composable
 fun <T> ExpressiveSegmentedRow(
@@ -118,6 +128,7 @@ fun <T> ExpressiveSegmentedRow(
                     .height(height)
                     .clip(RoundedCornerShape(cornerRadius))
                     .background(bgColor)
+                    .border(1.dp, bgColor.lighten(), RoundedCornerShape(cornerRadius))
                     .clickable {
                         haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                         onSelect(item)

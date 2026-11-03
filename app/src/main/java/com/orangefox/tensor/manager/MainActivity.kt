@@ -132,6 +132,7 @@ import androidx.compose.ui.unit.dp
 import com.orangefox.tensor.manager.ui.BottomBlurBar
 import com.orangefox.tensor.manager.ui.ExpandableGroupCard
 import com.orangefox.tensor.manager.ui.ExpressiveSegmentedRow
+import com.orangefox.tensor.manager.ui.lighten
 import com.orangefox.tensor.manager.ui.GraphicsLayerRecordingState
 import com.orangefox.tensor.manager.ui.MarkdownBody
 import com.orangefox.tensor.manager.ui.NetworkBannerImage
@@ -997,6 +998,7 @@ fun Root(
                             modifier = Modifier
                                 .clip(CircleShape)
                                 .background(pillBg)
+                                .border(1.dp, pillBg.lighten(), CircleShape)
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
@@ -1131,7 +1133,7 @@ private fun SettingsScreen(
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(24.dp)),
                 ) {
                     Column(
                         modifier = Modifier.padding(18.dp),
@@ -1246,7 +1248,7 @@ private fun SettingsScreen(
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(24.dp)),
                 ) {
                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
                         SettingSwitchRow(
@@ -1330,7 +1332,7 @@ private fun SettingsScreen(
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(24.dp)),
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -1343,14 +1345,14 @@ private fun SettingsScreen(
                             FilledTonalButton(
                                 onClick = { uriHandler.openUri("https://t.me/OFRPforTensor") },
                                 shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(14.dp)),
                             ) {
                                 Text("@OFRPforTensor")
                             }
                             FilledTonalButton(
                                 onClick = { uriHandler.openUri("https://t.me/OFRPforTensorDiscussion") },
                                 shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(14.dp)),
                             ) {
                                 Text(stringResource(R.string.link_tg_discussion))
                             }
@@ -1369,6 +1371,7 @@ private fun SettingsScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(12.dp))
+                                            .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh.lighten(), RoundedCornerShape(12.dp))
                                             .clickable { uriHandler.openUri(url) },
                                     ) {
                                         Row(
@@ -1405,6 +1408,7 @@ private fun SettingsScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(12.dp))
+                                            .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHigh.lighten(), RoundedCornerShape(12.dp))
                                             .clickable { uriHandler.openUri(url) },
                                     ) {
                                         Row(
@@ -1446,7 +1450,7 @@ private fun SettingsScreen(
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.lighten(), RoundedCornerShape(24.dp)),
                 ) {
                     Column(
                         modifier = Modifier.padding(18.dp),
@@ -1467,7 +1471,7 @@ private fun SettingsScreen(
                                 uriHandler.openUri("https://github.com/leegarchat/twrp_device_google_pixels/tree/R12_16#readme")
                             },
                             shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary.lighten(), RoundedCornerShape(16.dp)),
                         ) {
                             Text(
                                 text = stringResource(R.string.action_donate_support),
@@ -2083,7 +2087,7 @@ private fun OpenGitHubReleaseButton(tag: String) {
             uriHandler.openUri("https://github.com/leegarchat/twrp_device_google_pixels/releases/tag/$tag")
         },
         shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(14.dp)),
     ) {
         Text(
             text = stringResource(R.string.action_open_github_release),
@@ -2324,7 +2328,8 @@ internal fun AssetRow(
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(42.dp),
+                            .height(42.dp)
+                            .border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(14.dp)),
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_download),
@@ -2368,7 +2373,8 @@ internal fun AssetRow(
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(42.dp),
+                        .height(42.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.secondaryContainer.lighten(), RoundedCornerShape(14.dp)),
                 ) {
                     Text(stringResource(R.string.action_retry))
                 }
@@ -2389,7 +2395,8 @@ internal fun AssetRow(
                             ),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(42.dp),
+                                .height(42.dp)
+                                .border(1.dp, MaterialTheme.colorScheme.primaryContainer.lighten(), RoundedCornerShape(14.dp)),
                         ) {
                             Text(
                                 text = stringResource(R.string.action_install),
@@ -2408,7 +2415,8 @@ internal fun AssetRow(
                         ),
                         modifier = Modifier
                             .weight(1f)
-                            .height(42.dp),
+                            .height(42.dp)
+                            .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.lighten(), RoundedCornerShape(14.dp)),
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_download),
