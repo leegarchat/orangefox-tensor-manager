@@ -204,6 +204,7 @@
     <string name="update_install_root_ok">Обновление установлено, перезапускаюсь</string>
     <string name="update_install_root_fail">Ошибка установки через root: %1$s</string>
     <string name="update_no_root">Для этого способа нужен root</string>
+    <string name="update_installing_root">Установка обновления…</string>
     <string name="update_need_unknown_sources">Разрешите установку из этого источника, затем повторите</string>
     <string name="recovery_custom_title">Рекавери %1$s</string>
     <string name="recovery_base_fmt">%1$s · From: %2$s</string>

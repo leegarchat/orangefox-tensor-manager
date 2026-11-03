@@ -683,20 +683,12 @@ fun Root(
     var managerUpdateOffer by remember { mutableStateOf<Pair<ManagerUpdateOption?, ManagerUpdateOption?>?>(null) }
     var updatePromptedForCode by remember { mutableStateOf(0) }
     var pendingManagerApk by remember { mutableStateOf<ManagerUpdateOption?>(null) }
-    var managerInstallFile by remember { mutableStateOf<Pair<File, Int>?>(null) }
+    var managerUpdating by remember { mutableStateOf(false) }
     var pendingNativeFile by remember { mutableStateOf<File?>(null) }
 
-    fun beginManagerUpdate(opt: ManagerUpdateOption) {
-        managerUpdateOffer = null
-        val key = "${opt.release.tag}/${opt.asset.name}"
-        val done = ReleasesSessionCache.downloads[key] as? AssetDl.Done
-        if (done != null && File(done.path).isFile) {
-            managerInstallFile = File(done.path) to opt.code
-        } else {
-            pendingManagerApk = opt
-            ReleasesSessionCache.startDownload(context, opt.release, opt.asset)
-        }
-    }
+
+
+
 
     fun installManagerApkNative(file: File) {
         runCatching {
@@ -723,6 +715,60 @@ fun Root(
         pendingNativeFile = null
     }
 
+    fun startManagerInstall(file: File) {
+        if (managerUpdating) return
+        scope.launch(Dispatchers.IO) {
+            val hasRoot = RootInstallerEngine.checkRootAccess()
+            if (hasRoot) {
+                withContext(Dispatchers.Main) { managerUpdating = true }
+                val err = RootInstallerEngine.installApkViaRoot(context, file)
+                withContext(Dispatchers.Main) {
+                    managerUpdating = false
+                    Toast.makeText(
+                        context,
+                        if (err == null) {
+                            context.getString(R.string.update_install_root_ok)
+                        } else {
+                            context.getString(R.string.update_install_root_fail, err)
+                        },
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    if (context.packageManager.canRequestPackageInstalls()) {
+                        installManagerApkNative(file)
+                    } else {
+                        pendingNativeFile = file
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.update_need_unknown_sources),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                        unknownAppLauncher.launch(
+                            android.content.Intent(
+                                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                android.net.Uri.parse("package:${context.packageName}"),
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun beginManagerUpdate(opt: ManagerUpdateOption) {
+        managerUpdateOffer = null
+        val key = "${opt.release.tag}/${opt.asset.name}"
+        val done = ReleasesSessionCache.downloads[key] as? AssetDl.Done
+        if (done != null && File(done.path).isFile) {
+            startManagerInstall(File(done.path))
+        } else {
+            pendingManagerApk = opt
+            ReleasesSessionCache.startDownload(context, opt.release, opt.asset)
+        }
+    }
+
     val releasesSnapshot = ReleasesSessionCache.releases
     LaunchedEffect(releasesSnapshot) {
         val (stable, beta) = findManagerUpdates(releasesSnapshot)
@@ -741,7 +787,7 @@ fun Root(
         LaunchedEffect(st) {
             if (st is AssetDl.Done && File(st.path).isFile) {
                 pendingManagerApk = null
-                managerInstallFile = File(st.path) to opt.code
+                startManagerInstall(File(st.path))
             } else if (st is AssetDl.Error) {
                 pendingManagerApk = null
             }
@@ -814,14 +860,18 @@ fun Root(
         )
     }
 
-    managerInstallFile?.let { (file, code) ->
+    if (managerUpdating) {
         AlertDialog(
-            onDismissRequest = { managerInstallFile = null },
+            onDismissRequest = {},
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp),
             shape = RoundedCornerShape(22.dp),
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+            ),
             title = {
                 Text(
                     text = stringResource(R.string.update_install_title),
@@ -829,79 +879,13 @@ fun Root(
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    com.orangefox.tensor.manager.ui.ExpressiveLinearProgress()
                     Text(
-                        text = stringResource(R.string.update_install_text, code),
+                        text = stringResource(R.string.update_installing_root),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Button(
-                        onClick = {
-                            managerInstallFile = null
-                            scope.launch(Dispatchers.IO) {
-                                val hasRoot = RootInstallerEngine.checkRootAccess()
-                                if (!hasRoot) {
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(
-                                            context,
-                                            context.getString(R.string.update_no_root),
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                    }
-                                    return@launch
-                                }
-                                val err = RootInstallerEngine.installApkViaRoot(context, file)
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(
-                                        context,
-                                        if (err == null) {
-                                            context.getString(R.string.update_install_root_ok)
-                                        } else {
-                                            context.getString(R.string.update_install_root_fail, err)
-                                        },
-                                        Toast.LENGTH_LONG,
-                                    ).show()
-                                }
-                            }
-                        },
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.edgeOutline()),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.update_install_root))
-                    }
-                    FilledTonalButton(
-                        onClick = {
-                            managerInstallFile = null
-                            if (context.packageManager.canRequestPackageInstalls()) {
-                                installManagerApkNative(file)
-                            } else {
-                                pendingNativeFile = file
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.update_need_unknown_sources),
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                                unknownAppLauncher.launch(
-                                    android.content.Intent(
-                                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                        android.net.Uri.parse("package:${context.packageName}"),
-                                    )
-                                )
-                            }
-                        },
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.update_install_system))
-                    }
-                    TextButton(
-                        onClick = { managerInstallFile = null },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.action_cancel))
-                    }
                 }
             },
             confirmButton = {},
@@ -974,7 +958,7 @@ fun Root(
                                         ?: return@ReleasesScreen
                                     val file = File(done.path)
                                     if (!file.isFile) return@ReleasesScreen
-                                    managerInstallFile = file to (managerApkVersionCode(asset.name) ?: 0)
+                                    startManagerInstall(file)
                                     return@ReleasesScreen
                                 }
                                 val key = "${rel.tag}/${asset.name}"
