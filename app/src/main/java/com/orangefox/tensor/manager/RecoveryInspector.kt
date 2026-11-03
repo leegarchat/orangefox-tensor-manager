@@ -948,6 +948,7 @@ fun InstalledRecoveryStatusCard(
                                     overflow = TextOverflow.Ellipsis,
                                     autoSize = TextAutoSize.StepBased(
                                         minFontSize = 10.sp,
+                                        maxFontSize = MaterialTheme.typography.bodyMedium.fontSize,
                                         stepSize = 1.sp,
                                     ),
                                 )
