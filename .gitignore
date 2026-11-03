@@ -25,3 +25,6 @@ Thumbs.db
 # APKs (CI signs releases separately)
 /app/*.apk
 *.apk
+
+# Local notes / reminders (not for repo)
+fox_version_extract.md
