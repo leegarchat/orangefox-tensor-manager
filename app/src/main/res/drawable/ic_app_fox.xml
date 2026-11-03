@@ -1,0 +1,116 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="512dp"
+    android:height="512dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Уши: внешняя часть (шире, развал наружу) -->
+    <path
+        android:fillColor="#EF5B36"
+        android:pathData="M112,238 C80,196 52,116 68,70 C79,42 109,30 142,41 C180,54 208,112 222,168 Z" />
+    <path
+        android:fillColor="#EF5B36"
+        android:pathData="M400,238 C432,196 460,116 444,70 C433,42 403,30 370,41 C332,54 304,112 290,168 Z" />
+
+    <!-- Уши: внутренняя часть -->
+    <path
+        android:fillColor="#FFCF9F"
+        android:pathData="M122,210 C104,178 88,118 97,86 C103,64 121,57 141,66 C169,80 190,124 200,166 Z" />
+    <path
+        android:fillColor="#FFCF9F"
+        android:pathData="M390,210 C408,178 424,118 415,86 C409,64 391,57 371,66 C343,80 322,124 312,166 Z" />
+
+    <!-- Голова: основная оранжевая масса, шире в щеках, двойной зигзаг сбоку -->
+    <path
+        android:fillColor="#FF7E2A"
+        android:pathData="M256,116
+            C338,116 416,156 438,246
+            C445,286 454,314 488,334
+            L460,348 L470,364 L440,370 L448,384 L414,392
+            C392,434 332,478 256,478
+            C180,478 120,434 98,392
+            L64,384 L72,370 L42,364 L52,348 L24,334
+            C50,318 64,288 74,246
+            C96,156 174,116 256,116 Z" />
+
+    <!-- Хохолок: три маленьких зубца -->
+    <path
+        android:fillColor="#FF7E2A"
+        android:pathData="M236,118 L245,96 L254,115 L263,94 L272,116 L282,118 Z" />
+
+    <!-- Мягкое высветление лба и центра (имитация радиального градиента референса) -->
+    <path
+        android:fillColor="#FFA14B"
+        android:fillAlpha="0.22"
+        android:pathData="M256,128 C328,128 384,178 390,252 C395,316 332,356 256,356 C180,356 117,316 122,252 C128,178 184,128 256,128 Z" />
+
+    <!-- Белая мордочка (граница ниже, румянец целиком на оранжевом) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56,398
+            C118,338 186,322 256,322
+            C326,322 394,338 456,398
+            C436,442 344,478 256,478
+            C168,478 76,442 56,398 Z" />
+
+    <!-- Румянец: полностью выше белой границы -->
+    <path
+        android:fillColor="#FF9A86"
+        android:fillAlpha="0.5"
+        android:pathData="M102,318 C102,298 121,284 144,284 C167,284 186,298 186,318 C186,338 167,352 144,352 C121,352 102,338 102,318 Z" />
+    <path
+        android:fillColor="#FF9A86"
+        android:fillAlpha="0.5"
+        android:pathData="M326,318 C326,298 345,284 368,284 C391,284 410,298 410,318 C410,338 391,352 368,352 C345,352 326,338 326,318 Z" />
+
+    <!-- Брови -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M168,216 C179,216 188,207 189,195 C190,183 183,173 171,172 C159,171 149,179 148,191 C147,203 157,216 168,216 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M344,216 C355,216 365,203 364,191 C363,179 353,171 341,172 C329,173 322,183 323,195 C324,207 333,216 344,216 Z" />
+
+    <!-- Глаза -->
+    <path
+        android:fillColor="#2A0D0D"
+        android:pathData="M172,284 C188,284 200,270 200,252 C200,234 188,220 172,220 C156,220 144,234 144,252 C144,270 156,284 172,284 Z" />
+    <path
+        android:fillColor="#2A0D0D"
+        android:pathData="M340,284 C356,284 368,270 368,252 C368,234 356,220 340,220 C324,220 312,234 312,252 C312,270 324,284 340,284 Z" />
+    <!-- Блики -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M158,252 C158,246 162,242 168,242 C174,242 178,246 178,252 C178,258 174,262 168,262 C162,262 158,258 158,252 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M326,252 C326,246 330,242 336,242 C342,242 346,246 346,252 C346,258 342,262 336,262 C330,262 326,258 326,252 Z" />
+
+    <!-- Нос -->
+    <path
+        android:fillColor="#2A0D12"
+        android:pathData="M256,360 C275,360 294,349 294,335 C294,322 278,314 256,314 C234,314 218,322 218,335 C218,349 237,360 256,360 Z" />
+
+    <!-- Рот: вертикаль + два завитка -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#2A0D12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="13"
+        android:pathData="M256,360 L256,390" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#2A0D12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="13"
+        android:pathData="M256,390 C256,400 246,407 232,407 C220,407 211,400 206,393" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#2A0D12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="13"
+        android:pathData="M256,390 C256,400 266,407 280,407 C292,407 301,400 306,393" />
+</vector>

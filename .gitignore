@@ -1,0 +1,27 @@
+# Local SDK paths and machine-specific files
+local.properties
+
+# Gradle
+.gradle/
+build/
+app/build/
+gradle-app.setting
+!gradle-wrapper.jar
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.iws
+captures/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Keystores (release keys live outside the repo)
+*.jks
+*.keystore
+
+# APKs (CI signs releases separately)
+/app/*.apk
+*.apk
