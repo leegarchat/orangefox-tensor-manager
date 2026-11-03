@@ -122,6 +122,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -162,6 +163,7 @@ data class ReleaseAsset(
     val name: String,
     val url: String,
     val size: Long,
+    val downloads: Long = -1L,
 ) {
     val isAioZip: Boolean
         get() = name.lowercase().let { it.contains("aio") && it.endsWith(".zip") }
@@ -259,6 +261,7 @@ private fun fetchReleases(): List<ReleaseInfo> {
                                             name = nm,
                                             url = a.optString("browser_download_url"),
                                             size = a.optLong("size", -1L),
+                                            downloads = a.optLong("download_count", -1L),
                                         )
                                     )
                                 }
@@ -2217,6 +2220,17 @@ internal fun AssetRow(
                     if (asset.size > 0) {
                         Text(
                             text = stringResource(R.string.asset_size_mb, asset.size / 1048576.0),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (asset.downloads >= 0) {
+                        Text(
+                            text = pluralStringResource(
+                                R.plurals.asset_downloads,
+                                asset.downloads.toInt().coerceAtLeast(0),
+                                asset.downloads,
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

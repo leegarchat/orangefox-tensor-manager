@@ -160,4 +160,7 @@
     <string name="app_name_short">OFox Tensor 管理器</string>
     <string name="install_raw_too_big">镜像大小（%1$d B）超过分区大小（%2$d B）</string>
     <string name="install_busy_cannot_switch">正在刷写——请等待完成</string>
+    <plurals name="asset_downloads">
+        <item quantity="other">↓ %1$d 次下载</item>
+    </plurals>
 </resources>

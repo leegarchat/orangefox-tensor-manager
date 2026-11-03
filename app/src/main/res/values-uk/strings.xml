@@ -160,4 +160,10 @@
     <string name="app_name_short">Менеджер OFox Tensor</string>
     <string name="install_raw_too_big">Розмір образу (%1$d Б) перевищує розмір розділу (%2$d Б)</string>
     <string name="install_busy_cannot_switch">Триває прошивка — дочекайтеся завершення</string>
+    <plurals name="asset_downloads">
+        <item quantity="one">↓ %1$d завантаження</item>
+        <item quantity="few">↓ %1$d завантаження</item>
+        <item quantity="many">↓ %1$d завантажень</item>
+        <item quantity="other">↓ %1$d завантажень</item>
+    </plurals>
 </resources>

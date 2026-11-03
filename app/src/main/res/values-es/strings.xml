@@ -160,4 +160,8 @@
     <string name="app_name_short">Gestor OFox Tensor</string>
     <string name="install_raw_too_big">El tamaño de la imagen (%1$d B) supera el tamaño de la partición (%2$d B)</string>
     <string name="install_busy_cannot_switch">Flasheo en curso — espera a que termine</string>
+    <plurals name="asset_downloads">
+        <item quantity="one">↓ %1$d descarga</item>
+        <item quantity="other">↓ %1$d descargas</item>
+    </plurals>
 </resources>
