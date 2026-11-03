@@ -21,6 +21,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -173,16 +174,16 @@ fun InstallScreen(
     onDeleteCachedAsset: (ReleaseInfo, ReleaseAsset) -> Unit,
     onCopyCachedAssetToDownloads: (ReleaseInfo, ReleaseAsset) -> Unit,
     onInstallBusyChange: (Boolean) -> Unit = {},
+    submenuTarget: InstallTargetRequest?,
+    onSubmenuTargetChange: (InstallTargetRequest?) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    var activeSubmenuTarget by remember { mutableStateOf<InstallTargetRequest?>(null) }
     var backupRestoreDialogTarget by remember { mutableStateOf<BackupEntry?>(null) }
     var showNoRootDialog by remember { mutableStateOf(false) }
 
-    var saveBackupOnFlash by remember { mutableStateOf(prefs.backupVendorBootOnFlash) }
     var importedItems by remember { mutableStateOf(RootInstallerEngine.loadImportedItems(context)) }
     var backups by remember { mutableStateOf(RootInstallerEngine.loadBackups(context)) }
 
@@ -198,7 +199,7 @@ fun InstallScreen(
 
     LaunchedEffect(externalLaunchRequest) {
         if (externalLaunchRequest != null) {
-            activeSubmenuTarget = externalLaunchRequest
+            onSubmenuTargetChange(externalLaunchRequest)
             onConsumeExternalRequest()
         }
     }
@@ -212,7 +213,7 @@ fun InstallScreen(
                 if (request is InstallTargetRequest.FromBackup) {
                     backupRestoreDialogTarget = request.backup
                 } else {
-                    activeSubmenuTarget = request
+                    onSubmenuTargetChange(request)
                 }
             }
         }
@@ -278,7 +279,7 @@ fun InstallScreen(
     }
 
     AnimatedContent(
-        targetState = activeSubmenuTarget,
+        targetState = submenuTarget,
         transitionSpec = {
             if (targetState != null) {
                 (slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { it / 3 } + fadeIn(tween(220)))
@@ -295,9 +296,8 @@ fun InstallScreen(
                 topInset = topInset,
                 target = submenuTarget,
                 prefs = prefs,
-                saveBackupDefault = saveBackupOnFlash,
                 onBack = {
-                    activeSubmenuTarget = null
+                    onSubmenuTargetChange(null)
                     refreshLocalLists()
                 },
                 onInstallBusyChange = onInstallBusyChange,
@@ -332,10 +332,10 @@ fun InstallScreen(
                                     importLauncher.launch(arrayOf("*/*"))
                                 },
                                 shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.edgeOutline()),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(48.dp)
-                                    .border(1.dp, MaterialTheme.colorScheme.primary.edgeOutline(), RoundedCornerShape(16.dp)),
+                                    .height(48.dp),
                             ) {
                                 Icon(
                                     painter = painterResource(R.drawable.ic_download),
@@ -347,38 +347,6 @@ fun InstallScreen(
                                     text = stringResource(R.string.action_import_aio_or_img),
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
-                                )
-                            }
-
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                            )
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { val next = !saveBackupOnFlash; saveBackupOnFlash = next; prefs.backupVendorBootOnFlash = next },
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = stringResource(R.string.install_backup_toggle_title),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.install_backup_toggle_desc),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                androidx.compose.material3.Switch(
-                                    checked = saveBackupOnFlash,
-                                    onCheckedChange = {
-                                        saveBackupOnFlash = it
-                                        prefs.backupVendorBootOnFlash = it
-                                    },
                                 )
                             }
                         }
@@ -639,10 +607,10 @@ private fun LocalFileInstallCard(
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primaryContainer.edgeOutline()),
                     modifier = Modifier
                         .weight(1f)
-                        .height(42.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.primaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
+                        .height(42.dp),
                 ) {
                     Text(
                         text = stringResource(R.string.action_install),
@@ -657,10 +625,10 @@ private fun LocalFileInstallCard(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                         contentColor = MaterialTheme.colorScheme.onSurface,
                     ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.edgeOutline()),
                     modifier = Modifier
                         .weight(1f)
-                        .height(42.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.edgeOutline(), RoundedCornerShape(14.dp)),
+                        .height(42.dp),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_download),
@@ -723,7 +691,7 @@ private fun ReleaseInstallCard(
                     onClick = onOpenRelease,
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(12.dp)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
                 ) {
                     Text(
                         text = stringResource(R.string.action_open_release),
@@ -884,7 +852,6 @@ private fun InstallerSubmenuView(
     topInset: Dp,
     target: InstallTargetRequest,
     prefs: AppPrefs,
-    saveBackupDefault: Boolean,
     onBack: () -> Unit,
     onInstallBusyChange: (Boolean) -> Unit = {},
 ) {
@@ -904,7 +871,7 @@ private fun InstallerSubmenuView(
     var targetSlot by remember { mutableStateOf(TargetSlotOption.Both) }
     var strip16k by remember { mutableStateOf(false) }
     var spaceErrorSeen by remember { mutableStateOf(prefs.spaceErrorSeen) }
-    var saveBackup by remember { mutableStateOf(saveBackupDefault) }
+    var saveBackup by remember { mutableStateOf(prefs.backupVendorBootOnFlash) }
 
     var touchMode by remember { mutableStateOf(TouchModuleMode.Auto) }
     var customTouchLgz by remember { mutableStateOf<File?>(null) }
@@ -1241,7 +1208,8 @@ private fun InstallerSubmenuView(
                                             containerColor = MaterialTheme.colorScheme.error,
                                             contentColor = MaterialTheme.colorScheme.onError,
                                         ),
-                                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.error.edgeOutline(), RoundedCornerShape(14.dp)),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.edgeOutline()),
+                                        modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Text(
                                             text = stringResource(R.string.action_strip_16k_retry),
@@ -1392,6 +1360,50 @@ private fun InstallerSubmenuView(
         }
 
         if (!isUnpacking && unpackError == null) {
+            if (target !is InstallTargetRequest.FromBackup &&
+                destinationMode != InstallDestinationMode.SaveToDownloads
+            ) {
+                item(key = "cfg_backup") {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = RoundedCornerShape(22.dp),
+                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(22.dp)),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val next = !saveBackup
+                                    saveBackup = next
+                                    prefs.backupVendorBootOnFlash = next
+                                }
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.install_backup_toggle_title),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = stringResource(R.string.install_backup_toggle_desc),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            androidx.compose.material3.Switch(
+                                checked = saveBackup,
+                                onCheckedChange = {
+                                    saveBackup = it
+                                    prefs.backupVendorBootOnFlash = it
+                                },
+                            )
+                        }
+                    }
+                }
+            }
             item(key = "run_action_button") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (isRunningInstall) {
@@ -1474,10 +1486,10 @@ private fun InstallerSubmenuView(
                             }
                         },
                         shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.edgeOutline()),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(52.dp)
-                            .border(1.dp, MaterialTheme.colorScheme.primary.edgeOutline(), RoundedCornerShape(18.dp)),
+                            .height(52.dp),
                     ) {
                         Text(
                             text = if (destinationMode == InstallDestinationMode.SaveToDownloads &&
@@ -1499,10 +1511,10 @@ private fun InstallerSubmenuView(
                                     scope.launch { RootInstallerEngine.rebootToRecovery() }
                                 },
                                 shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(48.dp)
-                                    .border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(16.dp)),
+                                    .height(48.dp),
                             ) {
                                 Text(
                                     text = stringResource(R.string.action_reboot_recovery),

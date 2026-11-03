@@ -47,6 +47,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -503,6 +504,8 @@ fun Root(
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var externalLaunchRequest by remember { mutableStateOf<InstallTargetRequest?>(null) }
     var installBusy by rememberSaveable { mutableStateOf(false) }
+    // Подменю установщика живёт в Root, чтобы переживать переключение вкладок.
+    var installSubmenuTarget by remember { mutableStateOf<InstallTargetRequest?>(null) }
     var focusReleaseTag by rememberSaveable { mutableStateOf<String?>(null) }
     val homeNav = remember { HomeNavState() }
     val homeChips = remember { HomeChipsState() }
@@ -659,6 +662,8 @@ fun Root(
                             onDeleteCachedAsset = { rel, asset -> deleteCachedAsset(rel, asset) },
                             onCopyCachedAssetToDownloads = { rel, asset -> copyCachedAsset(rel, asset) },
                             onInstallBusyChange = { installBusy = it },
+                            submenuTarget = installSubmenuTarget,
+                            onSubmenuTargetChange = { installSubmenuTarget = it },
                         )
                         Tab.Settings -> SettingsScreen(
                             topInset = topBarH + 8.dp,
@@ -799,7 +804,7 @@ fun Root(
                 exit = fadeOut(tween(150)) + slideOutVertically(tween(180)) { it / 3 } + scaleOut(targetScale = 0.92f),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(start = 24.dp, end = 24.dp, bottom = 92.dp),
+                    .padding(start = 24.dp, end = 24.dp, bottom = 106.dp),
             ) {
                 val floatingRel = floatingFilesState.targetRelease ?: floatingFilesState.lastTargetRelease
                 if (floatingRel != null) {
@@ -896,7 +901,7 @@ fun Root(
                 exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.9f),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 20.dp, bottom = 92.dp),
+                    .padding(start = 20.dp, bottom = 106.dp),
             ) {
                 BottomBlurBar(
                     blurState = blurState,
@@ -927,7 +932,7 @@ fun Root(
                 exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.9f),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 20.dp, bottom = 92.dp),
+                    .padding(end = 20.dp, bottom = 106.dp),
             ) {
                 BottomBlurBar(
                     blurState = blurState,
@@ -1298,7 +1303,8 @@ private fun SettingsScreen(
                             FilledTonalButton(
                                 onClick = { uriHandler.openUri("https://t.me/OFRPforTensor") },
                                 shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.weight(1f).height(48.dp).border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
+                                modifier = Modifier.weight(1f).height(48.dp),
                                 contentPadding = PaddingValues(horizontal = 8.dp),
                             ) {
                                 Text(
@@ -1311,7 +1317,8 @@ private fun SettingsScreen(
                             FilledTonalButton(
                                 onClick = { uriHandler.openUri("https://t.me/OFRPforTensorDiscussion") },
                                 shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.weight(1f).height(48.dp).border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
+                                modifier = Modifier.weight(1f).height(48.dp),
                                 contentPadding = PaddingValues(horizontal = 8.dp),
                             ) {
                                 Text(
@@ -1436,7 +1443,8 @@ private fun SettingsScreen(
                                 uriHandler.openUri("https://github.com/leegarchat/twrp_device_google_pixels/tree/R12_16#readme")
                             },
                             shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.primary.edgeOutline(), RoundedCornerShape(16.dp)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.edgeOutline()),
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text(
                                 text = stringResource(R.string.action_donate_support),
@@ -2052,7 +2060,8 @@ private fun OpenGitHubReleaseButton(tag: String) {
             uriHandler.openUri("https://github.com/leegarchat/twrp_device_google_pixels/releases/tag/$tag")
         },
         shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Text(
             text = stringResource(R.string.action_open_github_release),
@@ -2291,10 +2300,10 @@ internal fun AssetRow(
                     FilledTonalButton(
                         onClick = onDownload,
                         shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(42.dp)
-                            .border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
+                            .height(42.dp),
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_download),
@@ -2336,10 +2345,10 @@ internal fun AssetRow(
                 FilledTonalButton(
                     onClick = onDownload,
                     shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(42.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
+                        .height(42.dp),
                 ) {
                     Text(stringResource(R.string.action_retry))
                 }
@@ -2358,10 +2367,10 @@ internal fun AssetRow(
                                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primaryContainer.edgeOutline()),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(42.dp)
-                                .border(1.dp, MaterialTheme.colorScheme.primaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
+                                .height(42.dp),
                         ) {
                             Text(
                                 text = stringResource(R.string.action_install),
@@ -2378,10 +2387,10 @@ internal fun AssetRow(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.edgeOutline()),
                         modifier = Modifier
                             .weight(1f)
-                            .height(42.dp)
-                            .border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.edgeOutline(), RoundedCornerShape(14.dp)),
+                            .height(42.dp),
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_download),
