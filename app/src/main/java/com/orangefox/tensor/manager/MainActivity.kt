@@ -137,6 +137,7 @@ import com.orangefox.tensor.manager.ui.MarkdownBody
 import com.orangefox.tensor.manager.ui.NetworkBannerImage
 import com.orangefox.tensor.manager.ui.SettingSlider
 import com.orangefox.tensor.manager.ui.TopBarBlurOverlay
+import com.orangefox.tensor.manager.ui.TopStatusVeil
 import com.orangefox.tensor.manager.ui.extractBannerAndCleanMarkdown
 import com.orangefox.tensor.manager.ui.recordLayer
 import com.orangefox.tensor.manager.ui.rememberGraphicsLayerRecordingState
@@ -688,6 +689,11 @@ fun Root(
                     topBarHeight = topBarH,
                     blurState = blurState,
                     blurRadius = blurRadius,
+                )
+                TopStatusVeil(
+                    backgroundColor = contentBg,
+                    veilHeight = statusTop + 14.dp,
+                    modifier = Modifier.align(Alignment.TopCenter),
                 )
                 Row(
                     modifier = Modifier

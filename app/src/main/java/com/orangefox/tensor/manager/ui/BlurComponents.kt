@@ -298,3 +298,32 @@ fun BottomBlurBar(
         content()
     }
 }
+
+/**
+ * Микроградиент-вуаль у верхней кромки (зона статус-бара).
+ * Скрывает нечёткость блюра на краях контента, где нет информации для сэмплирования.
+ * Альфа снизу вверх: 0 → 20 → 40 → 100. Цвет = фон контента (тёмный/светлый по теме).
+ * Рисуется сиблингом recordLayer, только поверх блюр-оверлея шапки.
+ */
+@Composable
+fun TopStatusVeil(
+    backgroundColor: Color,
+    veilHeight: Dp,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(veilHeight)
+            .background(
+                Brush.verticalGradient(
+                    colorStops = arrayOf(
+                        0.0f to backgroundColor,
+                        0.55f to backgroundColor.copy(alpha = 0.4f),
+                        0.8f to backgroundColor.copy(alpha = 0.2f),
+                        1.0f to backgroundColor.copy(alpha = 0f),
+                    )
+                )
+            )
+    )
+}
