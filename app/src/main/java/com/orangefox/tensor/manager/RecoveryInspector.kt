@@ -46,6 +46,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.orangefox.tensor.manager.ui.ExpressiveLinearProgress
 import com.orangefox.tensor.manager.ui.edgeOutline
@@ -81,8 +82,78 @@ data class SlotRecoveryInfo(
     val formattedBuildDate: String,
     val buildHost: String,
     val foxCodebase: String,
+    val romName: String,
+    val romVersion: String,
+    val losBased: Boolean,
+    val buildFingerprint: String,
     val checkedAtMs: Long,
 )
+
+/**
+ * Продвинутый детект исходной прошивки по пропсам vendor_boot.
+ * Порядок важен: сначала именованные кастомы, потом generic-правила.
+ * Возвращает (имя ROM, версия ROM).
+ */
+internal fun identifyRom(props: Map<String, String>): Pair<String, String> {
+    fun hasPrefix(prefix: String): Boolean =
+        props.keys.any { it.lowercase().startsWith(prefix) }
+
+    val lineageVersion = props["ro.lineage.version"] ?: ""
+    if (hasPrefix("ro.rising.") || lineageVersion.startsWith("RisingOS")) {
+        return "RisingOS" to (props["ro.lineage.display.version"] ?: lineageVersion)
+    }
+    if (hasPrefix("ro.crdroid.")) {
+        val ver = props["ro.crdroid.display.version"]
+            ?: props["ro.crdroid.version"]
+            ?: props["ro.crdroid.build.version"]
+            ?: ""
+        return "crDroid" to ver
+    }
+    val voltageVer = props["ro.voltage.version"] ?: ""
+    if (voltageVer.isNotBlank() || hasPrefix("ro.voltage.")) {
+        return "VoltageOS" to voltageVer
+    }
+    val infinityVer = props["ro.infinity.build.version"] ?: ""
+    if (infinityVer.isNotBlank() || hasPrefix("ro.infinity.")) {
+        return "Project Infinity" to infinityVer
+    }
+    val customVer = props["ro.custom.version"] ?: ""
+    if (customVer.isNotBlank() || hasPrefix("ro.ascp.") || hasPrefix("ro.custom.")) {
+        val name = if (hasPrefix("ro.ascp.") || customVer.contains("ascp", ignoreCase = true)) {
+            "ASCP"
+        } else {
+            "Custom ROM"
+        }
+        return name to customVer
+    }
+    if (props.containsKey("net.pixelos.version")) {
+        return "PixelOS" to (props["ro.build.display.id"] ?: "")
+    }
+    if (lineageVersion.isNotBlank()) {
+        return "LineageOS" to lineageVersion
+    }
+    if ((props["ro.build.host"] ?: "") == "r-0123456789abcdef-0123") {
+        // Эвристика: GrapheneOS анонимизирует хост сборки; маркеров в пропсах не оставляет.
+        return "GrapheneOS" to ""
+    }
+    val lineageMarkers = hasPrefix("ro.lineage.") ||
+        props.values.any { it.contains("lineage", ignoreCase = true) }
+    if (lineageMarkers) {
+        return "LineageOS" to ""
+    }
+    val flavor = props["ro.build.flavor"] ?: ""
+    val model = props["ro.product.system.model"] ?: ""
+    if ("generic_system" in flavor || model == "Generic System") {
+        return "GSI" to ""
+    }
+    val fingerprint = props["ro.build.fingerprint"] ?: ""
+    val tags = props["ro.build.tags"] ?: ""
+    val stockFlavor = Regex("^[a-z0-9]+-user$").matches(flavor)
+    if ((fingerprint.startsWith("google/") || stockFlavor) && "release-keys" in tags) {
+        return "Stock" to ""
+    }
+    return "AOSP" to ""
+}
 
 object RecoveryStateCache {
     private const val TAG = "RecoveryInspector"
@@ -91,6 +162,7 @@ object RecoveryStateCache {
     var isInspecting by mutableStateOf(false)
     var hasRoot by mutableStateOf<Boolean?>(null)
     var initialized by mutableStateOf(false)
+    var liveFingerprint by mutableStateOf("")
 
     private val mutex = Mutex()
 
@@ -107,6 +179,8 @@ object RecoveryStateCache {
                 try {
                     val cachedMap = loadDiskCache(context)
                     val sysSlot = readActiveSlotNonRoot()
+                    val liveFp = readLiveFingerprint()
+                    withContext(Dispatchers.Main) { liveFingerprint = liveFp }
                     withContext(Dispatchers.Main) {
                         activeSlot = sysSlot
                         if (slotInfo.isEmpty() && cachedMap.isNotEmpty()) {
@@ -151,6 +225,17 @@ object RecoveryStateCache {
                     withContext(Dispatchers.Main) { isInspecting = false }
                 }
             }
+        }
+    }
+
+    private fun readLiveFingerprint(): String {
+        return try {
+            val proc = ProcessBuilder("getprop", "ro.build.fingerprint").start()
+            val out = proc.inputStream.bufferedReader().readText().trim()
+            proc.waitFor()
+            out
+        } catch (_: Exception) {
+            ""
         }
     }
 
@@ -292,6 +377,10 @@ object RecoveryStateCache {
                     formattedBuildDate = "—",
                     buildHost = "",
                     foxCodebase = "",
+                    romName = "AOSP",
+                    romVersion = "",
+                    losBased = false,
+                    buildFingerprint = "",
                     checkedAtMs = System.currentTimeMillis(),
                 )
             }
@@ -507,17 +596,22 @@ object RecoveryStateCache {
                 else -> InstalledRecoveryType.UNKNOWN
             }
 
+            val (rawRomName, romVersion) = identifyRom(props)
+            val romName = if (hasFoxProps) "OrangeFox" else rawRomName
+            val losBased = props.keys.any { it.contains("lineage", ignoreCase = true) } ||
+                propText.contains("lineage", ignoreCase = true)
+
             val resolvedVersion = when {
                 !twrpVer.isNullOrBlank() -> twrpVer
+                romVersion.isNotBlank() -> romVersion
                 foxCodebase.isNotBlank() -> foxCodebase
                 !props["ro.twrp.version"].isNullOrBlank() -> props["ro.twrp.version"]!!
-                !props["ro.lineage.version"].isNullOrBlank() -> props["ro.lineage.version"]!!
                 !props["ro.build.id"].isNullOrBlank() -> props["ro.build.id"]!!
                 type == InstalledRecoveryType.STOCK -> "AOSP Stock"
                 else -> "—"
             }
 
-            Log.d(TAG, "slot $slot: props=${props.size} twrpVer=$twrpVer foxBin=$hasFoxBinMarker host=$buildHost utc=$utcSec -> $type")
+            Log.d(TAG, "slot $slot: props=${props.size} twrpVer=$twrpVer foxBin=$hasFoxBinMarker host=$buildHost utc=$utcSec rom=$romName -> $type")
             return SlotRecoveryInfo(
                 slot = slot,
                 blockSha256 = blockSha256,
@@ -527,6 +621,10 @@ object RecoveryStateCache {
                 formattedBuildDate = formatBuildDate(utcSec),
                 buildHost = buildHost,
                 foxCodebase = foxCodebase,
+                romName = romName,
+                romVersion = romVersion,
+                losBased = losBased,
+                buildFingerprint = props["ro.build.fingerprint"] ?: "",
                 checkedAtMs = System.currentTimeMillis(),
             )
         } finally {
@@ -543,6 +641,7 @@ object RecoveryStateCache {
         if (!f.isFile) return emptyMap()
         return try {
             val root = JSONObject(f.readText())
+            if (root.optInt("v", 1) != 2) return emptyMap()
             val out = mutableMapOf<String, SlotRecoveryInfo>()
             for (slot in listOf("a", "b")) {
                 val o = root.optJSONObject(slot) ?: continue
@@ -558,6 +657,10 @@ object RecoveryStateCache {
                     formattedBuildDate = formatBuildDate(utc),
                     buildHost = o.optString("buildHost", ""),
                     foxCodebase = o.optString("foxCodebase", ""),
+                    romName = o.optString("romName", "AOSP"),
+                    romVersion = o.optString("romVersion", ""),
+                    losBased = o.optBoolean("losBased", false),
+                    buildFingerprint = o.optString("buildFingerprint", ""),
                     checkedAtMs = o.optLong("checkedAtMs", 0L),
                 )
             }
@@ -570,6 +673,7 @@ object RecoveryStateCache {
     private fun saveDiskCache(context: Context, map: Map<String, SlotRecoveryInfo>) {
         try {
             val root = JSONObject()
+            root.put("v", 2)
             for ((slot, info) in map) {
                 root.put(
                     slot,
@@ -580,6 +684,10 @@ object RecoveryStateCache {
                         put("buildDateUtcSec", info.buildDateUtcSec)
                         put("buildHost", info.buildHost)
                         put("foxCodebase", info.foxCodebase)
+                        put("romName", info.romName)
+                        put("romVersion", info.romVersion)
+                        put("losBased", info.losBased)
+                        put("buildFingerprint", info.buildFingerprint)
                         put("checkedAtMs", info.checkedAtMs)
                     },
                 )
@@ -788,6 +896,22 @@ fun InstalledRecoveryStatusCard(
                                         )
                                     }
                                 }
+                                if (info != null && info.buildFingerprint.isNotBlank() &&
+                                    info.buildFingerprint == RecoveryStateCache.liveFingerprint
+                                ) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                                        shape = RoundedCornerShape(6.dp),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.recovery_running_now),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        )
+                                    }
+                                }
                             }
 
                             if (info != null) {
@@ -795,8 +919,16 @@ fun InstalledRecoveryStatusCard(
                                     InstalledRecoveryType.MY_OFOX -> stringResource(R.string.recovery_type_my_ofox)
                                     InstalledRecoveryType.OTHER_OFOX -> stringResource(R.string.recovery_type_other_ofox)
                                     InstalledRecoveryType.OTHER_TWRP -> stringResource(R.string.recovery_type_twrp)
-                                    InstalledRecoveryType.LOS_BASED -> stringResource(R.string.recovery_type_los)
-                                    InstalledRecoveryType.STOCK -> stringResource(R.string.recovery_type_stock)
+                                    InstalledRecoveryType.LOS_BASED -> if (info.romName == "LineageOS") {
+                                        stringResource(R.string.recovery_type_los)
+                                    } else {
+                                        stringResource(R.string.recovery_custom_title, info.romName)
+                                    }
+                                    InstalledRecoveryType.STOCK -> if (info.romName == "Stock" || info.romName == "AOSP") {
+                                        stringResource(R.string.recovery_type_stock)
+                                    } else {
+                                        stringResource(R.string.recovery_custom_title, info.romName)
+                                    }
                                     InstalledRecoveryType.UNKNOWN -> stringResource(R.string.recovery_type_unknown)
                                 }
                                 Text(
@@ -810,6 +942,23 @@ fun InstalledRecoveryStatusCard(
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.recovery_base_fmt,
+                                        if (info.losBased) {
+                                            stringResource(R.string.recovery_base_los)
+                                        } else {
+                                            stringResource(R.string.recovery_base_aosp)
+                                        },
+                                        info.romName,
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
                                     text = stringResource(R.string.recovery_build_date, info.formattedBuildDate),

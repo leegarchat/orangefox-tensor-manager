@@ -181,4 +181,9 @@
     <string name="recovery_no_root_cached_warn">Root access is not granted. Showing last cached info — actual recovery on device may differ!</string>
     <string name="recovery_no_root_empty">Root access is required to read and identify installed recovery from vendor_boot.</string>
     <string name="action_recheck_recovery">Refresh</string>
+    <string name="recovery_custom_title">%1$s Recovery</string>
+    <string name="recovery_base_fmt">%1$s · From: %2$s</string>
+    <string name="recovery_base_los">LOS Based</string>
+    <string name="recovery_base_aosp">AOSP based</string>
+    <string name="recovery_running_now">running now</string>
 </resources>
