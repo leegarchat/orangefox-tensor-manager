@@ -163,4 +163,5 @@
     <plurals name="asset_downloads">
         <item quantity="other">↓ %1$d 次下载</item>
     </plurals>
+    <string name="release_reactions">♥ %1$d</string>
 </resources>

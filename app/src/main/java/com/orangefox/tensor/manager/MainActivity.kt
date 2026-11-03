@@ -181,6 +181,7 @@ data class ReleaseInfo(
     val cleanBody: String,
     val assets: List<ReleaseAsset>,
     val prerelease: Boolean = false,
+    val reactions: Int = 0,
 )
 
 sealed interface AssetDl {
@@ -276,6 +277,7 @@ private fun fetchReleases(): List<ReleaseInfo> {
                                 cleanBody = cleanBody,
                                 assets = assets,
                                 prerelease = o.optBoolean("prerelease", false),
+                                reactions = o.optJSONObject("reactions")?.optInt("total_count", 0) ?: 0,
                             )
                         )
                     }
@@ -2085,11 +2087,24 @@ private fun ReleaseHeaderRow(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            Text(
-                text = info.tag,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = info.tag,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (info.reactions > 0) {
+                    Text(
+                        text = stringResource(R.string.release_reactions, info.reactions),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
         }
         Icon(
             painter = painterResource(R.drawable.ic_chevron),

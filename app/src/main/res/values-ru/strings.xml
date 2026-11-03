@@ -166,4 +166,5 @@
         <item quantity="many">↓ %1$d загрузок</item>
         <item quantity="other">↓ %1$d загрузок</item>
     </plurals>
+    <string name="release_reactions">♥ %1$d</string>
 </resources>

@@ -163,4 +163,5 @@
         <item quantity="one">↓ %1$d download</item>
         <item quantity="other">↓ %1$d downloads</item>
     </plurals>
+    <string name="release_reactions">♥ %1$d</string>
 </resources>
