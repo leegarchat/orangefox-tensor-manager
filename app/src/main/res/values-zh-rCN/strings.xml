@@ -158,4 +158,6 @@
     <string name="install_unexpected_error">意外错误：%1$s</string>
     <string name="app_name">适用于 Pixel Tensor 系列的 OrangeFox 管理器</string>
     <string name="app_name_short">OFox Tensor 管理器</string>
+    <string name="install_raw_too_big">镜像大小（%1$d B）超过分区大小（%2$d B）</string>
+    <string name="install_busy_cannot_switch">正在刷写——请等待完成</string>
 </resources>

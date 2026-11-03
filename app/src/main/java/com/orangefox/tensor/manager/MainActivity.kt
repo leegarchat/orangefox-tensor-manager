@@ -3,14 +3,18 @@ package com.orangefox.tensor.manager
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
+import android.content.pm.PackageManager
+import android.Manifest
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -115,6 +119,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -206,7 +211,8 @@ object ReleasesSessionCache {
                         val key = "${rel.tag}/${asset.name}"
                         val safeName = asset.name.substringAfterLast('/').ifEmpty { "asset.bin" }
                         val cachedFile = File(cacheDir, "${rel.tag}__$safeName")
-                        if (cachedFile.exists() && cachedFile.length() > 0 && downloads[key] !is AssetDl.Downloading) {
+                        val validSize = if (asset.size > 0L) cachedFile.length() == asset.size else cachedFile.length() > 0L
+                        if (cachedFile.exists() && validSize && downloads[key] !is AssetDl.Downloading) {
                             downloads[key] = AssetDl.Done(cachedFile.absolutePath)
                         }
                     }
@@ -280,6 +286,7 @@ private fun downloadAsset(
     dest: File,
     onProgress: (Float?) -> Unit,
 ): File {
+    val partFile = File(dest.parentFile, "${dest.name}.part")
     Request.Builder().url(url)
         .header("User-Agent", "PixelOFoxApp")
         .build().let { req ->
@@ -287,20 +294,37 @@ private fun downloadAsset(
                 if (!resp.isSuccessful) error("download HTTP ${resp.code}")
                 val body = resp.body ?: error("empty body")
                 val total = body.contentLength()
-                dest.outputStream().use { out ->
-                    body.byteStream().use { ins ->
-                        val buf = ByteArray(256 * 1024)
-                        var done = 0L
-                        while (true) {
-                            val n = ins.read(buf)
-                            if (n < 0) break
-                            out.write(buf, 0, n)
-                            done += n
-                            onProgress(if (total > 0) done.toFloat() / total else null)
+                var lastReportedProgress = -1f
+                try {
+                    partFile.outputStream().use { out ->
+                        body.byteStream().use { ins ->
+                            val buf = ByteArray(256 * 1024)
+                            var done = 0L
+                            while (true) {
+                                val n = ins.read(buf)
+                                if (n < 0) break
+                                out.write(buf, 0, n)
+                                done += n
+                                if (total > 0) {
+                                    val p = done.toFloat() / total
+                                    if (p - lastReportedProgress >= 0.01f || done == total) {
+                                        lastReportedProgress = p
+                                        onProgress(p)
+                                    }
+                                }
+                            }
+                            if (total <= 0) onProgress(null)
                         }
                     }
+                    if (total > 0L && partFile.length() != total) {
+                        error("Incomplete download: ${partFile.length()} / $total")
+                    }
+                    dest.delete()
+                    if (!partFile.renameTo(dest)) partFile.copyTo(dest, overwrite = true)
+                    return dest
+                } finally {
+                    partFile.delete()
                 }
-                return dest
             }
         }
 }
@@ -352,6 +376,9 @@ class MainActivity : ComponentActivity() {
             var collapseH2AsSpoilers by remember { mutableStateOf(prefs.collapseH2AsSpoilers) }
             var collapseH2Home by remember { mutableStateOf(prefs.collapseH2Home) }
             var releaseNotifyMode by remember { mutableStateOf(ReleaseNotifyMode.fromOrdinal(prefs.releaseNotifyMode)) }
+            val notifPermLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { }
 
             OrangeFoxTheme(themeMode = themeMode) {
                 Root(
@@ -384,6 +411,14 @@ class MainActivity : ComponentActivity() {
                     onReleaseNotifyModeChange = {
                         releaseNotifyMode = it
                         prefs.releaseNotifyMode = it.ordinal
+                        if (it != ReleaseNotifyMode.None && Build.VERSION.SDK_INT >= 33 &&
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.POST_NOTIFICATIONS,
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
                         ReleaseCheckWorker.schedule(context, it)
                     },
                 )
@@ -459,6 +494,7 @@ fun Root(
     val scope = rememberCoroutineScope()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var externalLaunchRequest by remember { mutableStateOf<InstallTargetRequest?>(null) }
+    var installBusy by rememberSaveable { mutableStateOf(false) }
     var focusReleaseTag by rememberSaveable { mutableStateOf<String?>(null) }
     val homeNav = remember { HomeNavState() }
     val homeChips = remember { HomeChipsState() }
@@ -614,6 +650,7 @@ fun Root(
                             onStartDownload = { rel, asset -> startDownloadAsset(rel, asset) },
                             onDeleteCachedAsset = { rel, asset -> deleteCachedAsset(rel, asset) },
                             onCopyCachedAssetToDownloads = { rel, asset -> copyCachedAsset(rel, asset) },
+                            onInstallBusyChange = { installBusy = it },
                         )
                         Tab.Settings -> SettingsScreen(
                             topInset = topBarH + 8.dp,
@@ -910,6 +947,7 @@ fun Root(
                 blurState = blurState,
                 blurRadius = blurRadius,
             ) {
+                val dockHaptics = LocalHapticFeedback.current
                 Row(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -951,7 +989,18 @@ fun Root(
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
-                                ) { tab = t }
+                                ) {
+                                    if (installBusy && t != tab) {
+                                        dockHaptics.performHapticFeedback(HapticFeedbackType.Reject)
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.install_busy_cannot_switch),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    } else {
+                                        tab = t
+                                    }
+                                }
                                 .padding(horizontal = horizontalPad, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {

@@ -157,4 +157,6 @@
     <string name="install_unexpected_error">Unexpected error: %1$s</string>
     <string name="app_name">OrangeFox Manager for Pixel Tensor Series</string>
     <string name="app_name_short">OFox Tensor Manager</string>
+    <string name="install_raw_too_big">Image size (%1$d B) exceeds partition size (%2$d B)</string>
+    <string name="install_busy_cannot_switch">Flashing in progress — wait until it finishes</string>
 </resources>

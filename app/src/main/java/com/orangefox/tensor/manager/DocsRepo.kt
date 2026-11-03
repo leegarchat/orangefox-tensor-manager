@@ -167,7 +167,9 @@ private fun fetchDocsList(): List<DocInfo> {
         .header("Accept", "application/vnd.github+json")
         .build()
     docsHttp.newCall(req).execute().use { resp ->
-        if (!resp.isSuccessful) return out
+        // 403 (rate limit) и прочие HTTP-ошибки — бросаем исключение, чтобы refresh()
+        // откатился на дисковый кэш и НЕ затирал полный список двумя fallback-README.
+        if (!resp.isSuccessful) error("docs list HTTP ${resp.code}")
         val arr = JSONArray(resp.body?.string() ?: return out)
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)

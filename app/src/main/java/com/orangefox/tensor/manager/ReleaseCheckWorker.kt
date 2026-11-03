@@ -73,10 +73,20 @@ class ReleaseCheckWorker(
             )
             nm.createNotificationChannel(ch)
         }
+        val intent = android.content.Intent(applicationContext, MainActivity::class.java).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pi = android.app.PendingIntent.getActivity(
+            applicationContext,
+            tag.hashCode(),
+            intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
         val notification = NotificationCompat.Builder(applicationContext, channelId)
             .setSmallIcon(R.drawable.ic_bolt)
             .setContentTitle(applicationContext.getString(R.string.notify_new_release_title))
             .setContentText("$releaseName ($tag)")
+            .setContentIntent(pi)
             .setAutoCancel(true)
             .build()
         nm.notify(tag.hashCode(), notification)

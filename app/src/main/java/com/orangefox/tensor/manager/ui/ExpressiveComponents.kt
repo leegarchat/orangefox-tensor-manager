@@ -44,12 +44,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
@@ -199,11 +201,13 @@ fun ExpressiveLinearProgress(
                 ),
                 label = "IndetPhase",
             )
+            var barWidthPx by remember { mutableFloatStateOf(600f) }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight()
                     .clip(CircleShape)
+                    .onSizeChanged { barWidthPx = it.width.toFloat().coerceAtLeast(1f) }
                     .background(
                         Brush.linearGradient(
                             colors = listOf(
@@ -213,8 +217,8 @@ fun ExpressiveLinearProgress(
                                 primary.copy(alpha = 0.85f),
                                 trackColor,
                             ),
-                            start = Offset(phase * 600f - 200f, 0f),
-                            end = Offset(phase * 600f + 200f, 0f),
+                            start = Offset(phase * barWidthPx - barWidthPx * 0.33f, 0f),
+                            end = Offset(phase * barWidthPx + barWidthPx * 0.33f, 0f),
                         )
                     ),
             )

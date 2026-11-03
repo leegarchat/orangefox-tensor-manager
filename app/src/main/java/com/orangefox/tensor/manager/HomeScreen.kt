@@ -141,6 +141,10 @@ fun HomeScreen(
         currentId = DocsSessionCache.mainDocId()
     }
 
+    androidx.activity.compose.BackHandler(enabled = history.isNotEmpty()) {
+        goBack()
+    }
+
     LaunchedEffect(currentId, history.size, docs) {
         nav.visible = docs.isNotEmpty() && currentId != null
         nav.canGoBack = history.isNotEmpty()

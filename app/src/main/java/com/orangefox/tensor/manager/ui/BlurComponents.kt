@@ -46,7 +46,6 @@ import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import java.lang.reflect.Method
 
 /*
  * Единый общий RenderNode блюра на весь экран: RenderEffect применяется
@@ -108,7 +107,7 @@ fun Modifier.recordLayer(
                         drawRect(color = backgroundColor)
                         val orig = drawContext.canvas
                         drawContext.canvas = this@drawInto
-                        drawLayerCompat(state.graphicsLayer, parentLayer = null)
+                        this@drawWithContent.drawLayer(state.graphicsLayer)
                         drawContext.canvas = orig
 
                         if (topFadePx > 0f) {
@@ -167,57 +166,6 @@ private fun Modifier.renderLayerAt(
         native.translate(-offset.x, -offset.y)
         native.drawRenderNode(blurNode)
         native.restoreToCount(saveCount)
-    }
-}
-
-private fun DrawScope.drawLayerCompat(
-    graphicsLayer: androidx.compose.ui.graphics.layer.GraphicsLayer,
-    parentLayer: androidx.compose.ui.graphics.layer.GraphicsLayer?,
-) {
-    drawIntoCanvas { canvas ->
-        invokeGraphicsLayerDrawReflectively(
-            sourceLayer = graphicsLayer,
-            destinationCanvas = canvas,
-            parentLayer = parentLayer,
-        )
-    }
-}
-
-@Volatile
-private var cachedGraphicsLayerDrawMethod: Method? = null
-
-private fun invokeGraphicsLayerDrawReflectively(
-    sourceLayer: androidx.compose.ui.graphics.layer.GraphicsLayer,
-    destinationCanvas: androidx.compose.ui.graphics.Canvas,
-    parentLayer: androidx.compose.ui.graphics.layer.GraphicsLayer?,
-) {
-    val method = cachedGraphicsLayerDrawMethod ?: resolveGraphicsLayerDrawMethod(sourceLayer)
-    if (method != null) {
-        try {
-            method.invoke(sourceLayer, destinationCanvas, parentLayer)
-        } catch (e: Throwable) {
-            e.printStackTrace()
-        }
-    }
-}
-
-private fun resolveGraphicsLayerDrawMethod(
-    sourceLayer: androidx.compose.ui.graphics.layer.GraphicsLayer,
-): Method? {
-    cachedGraphicsLayerDrawMethod?.let { return it }
-
-    return try {
-        val method = sourceLayer::class.java.declaredMethods.firstOrNull { candidate ->
-            val params = candidate.parameterTypes
-            params.size == 2 &&
-                params[0].name.startsWith("androidx.compose.ui.graphics") &&
-                params[1].name.startsWith("androidx.compose.ui.graphics.layer")
-        }
-        method?.isAccessible = true
-        cachedGraphicsLayerDrawMethod = method
-        method
-    } catch (_: Throwable) {
-        null
     }
 }
 

@@ -116,6 +116,8 @@ object RootInstallerEngine {
         }
     }
 
+    private fun shQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
     private fun runRootCommand(cmd: String): Pair<Int, String> {
         return try {
             val proc = ProcessBuilder("su", "-c", cmd)
@@ -158,7 +160,7 @@ object RootInstallerEngine {
         if (currentSize >= targetSizeBytes) return true
 
         // Выходной файл создан bootsmasher под root — забираем доступ для процесса приложения.
-        runRootCommand("chmod 666 '${imgFile.absolutePath}'")
+        runRootCommand("chmod 666 ${shQuote(imgFile.absolutePath)}")
         return try {
             java.io.RandomAccessFile(imgFile, "rw").use { raf ->
                 raf.setLength(targetSizeBytes)
@@ -263,7 +265,7 @@ object RootInstallerEngine {
         val blockPath = "/dev/block/by-name/vendor_boot_$slot"
 
         onLog(context.getString(R.string.log_backup_slot, slot, blockPath))
-        val (rc, out) = runRootCommand("dd if=$blockPath of='${imgFile.absolutePath}' bs=1048576")
+        val (rc, out) = runRootCommand("dd if=$blockPath of=${shQuote(imgFile.absolutePath)} bs=1048576")
         if (rc != 0 || !imgFile.isFile || imgFile.length() == 0L) {
             onLog(context.getString(R.string.log_backup_slot_fail, slot, out))
             imgFile.delete()
@@ -310,7 +312,7 @@ object RootInstallerEngine {
 
             // Полностью очищаем рабочую директорию перед распаковкой конкретной сборки
             val rootWorkDir = File(context.filesDir, "installer_work")
-            runRootCommand("rm -rf '${rootWorkDir.absolutePath}'")
+            runRootCommand("rm -rf ${shQuote(rootWorkDir.absolutePath)}")
             rootWorkDir.deleteRecursively()
             val workDir = File(rootWorkDir, "current_build").apply { mkdirs() }
 
@@ -372,8 +374,8 @@ object RootInstallerEngine {
                 )
 
                 decoder.setExecutable(true, false)
-                runRootCommand("chmod 755 '${decoder.absolutePath}'")
-                val cmd = "'${decoder.absolutePath}' decompress '${binLgzFile.absolutePath}' '${workDir.absolutePath}'"
+                runRootCommand("chmod 755 ${shQuote(decoder.absolutePath)}")
+                val cmd = "${shQuote(decoder.absolutePath)} decompress ${shQuote(binLgzFile.absolutePath)} ${shQuote(workDir.absolutePath)}"
                 val (rc, out) = runRootCommand(cmd)
                 if (rc != 0) {
                     return@withContext Result.failure(
@@ -408,9 +410,9 @@ object RootInstallerEngine {
                 0.9f,
             )
             resolvedBin.setExecutable(true, false)
-            runRootCommand("chmod 755 '${resolvedBin.absolutePath}'")
-            val (_, helpOut) = runRootCommand("'${resolvedBin.absolutePath}' install --help")
-            val (_, expandOut) = runRootCommand("'${resolvedBin.absolutePath}' install --expand")
+            runRootCommand("chmod 755 ${shQuote(resolvedBin.absolutePath)}")
+            val (_, helpOut) = runRootCommand("${shQuote(resolvedBin.absolutePath)} install --help")
+            val (_, expandOut) = runRootCommand("${shQuote(resolvedBin.absolutePath)} install --expand")
             val supportsStrip16k = helpOut.contains("--strip-16k") ||
                 expandOut.contains("--strip-16k") ||
                 binaryContainsFlag(resolvedBin, "--strip-16k")
@@ -449,9 +451,7 @@ object RootInstallerEngine {
             onLog(msg)
         }
 
-        val slotsToProcess = if (config.sourceMode == VendorBootSourceMode.CustomFile &&
-            config.destinationMode == InstallDestinationMode.SaveToDownloads
-        ) {
+        val slotsToProcess = if (config.sourceMode == VendorBootSourceMode.CustomFile) {
             listOf("file")
         } else {
             config.targetSlot.slots
@@ -479,7 +479,7 @@ object RootInstallerEngine {
             } else {
                 val blockPath = "/dev/block/by-name/vendor_boot_$slot"
                 log(context.getString(R.string.log_reading_block, blockPath))
-                val (ddRc, ddOut) = runRootCommand("dd if=$blockPath of='${inputImg.absolutePath}' bs=1048576")
+                val (ddRc, ddOut) = runRootCommand("dd if=$blockPath of=${shQuote(inputImg.absolutePath)} bs=1048576")
                 if (ddRc != 0 || !inputImg.isFile || inputImg.length() == 0L) {
                     return@withContext InstallRunOutcome.Failure(
                         context.getString(R.string.install_dl_read_failed, blockPath, ddOut),
@@ -491,11 +491,11 @@ object RootInstallerEngine {
             }
 
             val cmdBuilder = StringBuilder().apply {
-                append("'${env.installerBin.absolutePath}' install --file")
-                append(" -i '${inputImg.absolutePath}'")
-                append(" -c '${env.payloadLz4.absolutePath}'")
-                append(" -o '${outputImg.absolutePath}'")
-                append(" --log '${logFile.absolutePath}'")
+                append("${shQuote(env.installerBin.absolutePath)} install --file")
+                append(" -i ${shQuote(inputImg.absolutePath)}")
+                append(" -c ${shQuote(env.payloadLz4.absolutePath)}")
+                append(" -o ${shQuote(outputImg.absolutePath)}")
+                append(" --log ${shQuote(logFile.absolutePath)}")
                 if (env.deviceCodename.isNotEmpty()) {
                     append(" --device ${env.deviceCodename}")
                 }
@@ -504,10 +504,10 @@ object RootInstallerEngine {
                 }
                 when (config.touchMode) {
                     TouchModuleMode.Auto -> env.availableModuleLgz?.let {
-                        append(" --inject-lgz '${it.absolutePath}'")
+                        append(" --inject-lgz ${shQuote(it.absolutePath)}")
                     }
                     TouchModuleMode.CustomFile -> config.customTouchLgz?.let {
-                        append(" --inject-lgz '${it.absolutePath}'")
+                        append(" --inject-lgz ${shQuote(it.absolutePath)}")
                     }
                     TouchModuleMode.None -> {}
                 }
@@ -591,7 +591,7 @@ object RootInstallerEngine {
             runRootCommand("blockdev --setrw $blockPath")
 
             log(context.getString(R.string.log_writing_image, blockPath))
-            val (flashRc, flashOut) = runRootCommand("dd if='${stagedFile.absolutePath}' of=$blockPath bs=1048576")
+            val (flashRc, flashOut) = runRootCommand("dd if=${shQuote(stagedFile.absolutePath)} of=$blockPath bs=1048576")
             if (flashRc != 0) {
                 return@withContext InstallRunOutcome.Failure(
                     context.getString(R.string.install_dl_flash_failed, blockPath, flashOut),
@@ -603,7 +603,7 @@ object RootInstallerEngine {
             val sizeBytes = stagedFile.length()
             val blocksCount = ((sizeBytes + 1048575L) / 1048576L).coerceAtLeast(1L)
             val (verifyRc, _) = runRootCommand(
-                "dd if=$blockPath of='${checkFile.absolutePath}' bs=1048576 count=$blocksCount && cmp -n $sizeBytes '${stagedFile.absolutePath}' '${checkFile.absolutePath}'"
+                "dd if=$blockPath of=${shQuote(checkFile.absolutePath)} bs=1048576 count=$blocksCount && head -c $sizeBytes ${shQuote(checkFile.absolutePath)} | cmp -s - ${shQuote(stagedFile.absolutePath)}"
             )
             checkFile.delete()
             if (verifyRc != 0) {
@@ -659,11 +659,19 @@ object RootInstallerEngine {
             }
 
             val blockPath = "/dev/block/by-name/vendor_boot_$slot"
+            val (_, bszOut) = runRootCommand("blockdev --getsize64 $blockPath")
+            val partSize = bszOut.toLongOrNull()?.takeIf { it > 0L } ?: DEFAULT_VENDOR_BOOT_PART_SIZE
+            if (imageFile.length() > partSize) {
+                return@withContext InstallRunOutcome.Failure(
+                    context.getString(R.string.install_raw_too_big, imageFile.length(), partSize),
+                    logs,
+                )
+            }
             log(context.getString(R.string.log_setrw, blockPath))
             runRootCommand("blockdev --setrw $blockPath")
 
             log(context.getString(R.string.log_writing_image, blockPath))
-            val (rc, out) = runRootCommand("dd if='${imageFile.absolutePath}' of=$blockPath bs=1048576")
+            val (rc, out) = runRootCommand("dd if=${shQuote(imageFile.absolutePath)} of=$blockPath bs=1048576")
             if (rc != 0) {
                 return@withContext InstallRunOutcome.Failure(
                     context.getString(R.string.install_raw_write_fail, slot, out),
@@ -675,7 +683,7 @@ object RootInstallerEngine {
             val sizeBytes = imageFile.length()
             val blocksCount = ((sizeBytes + 1048575L) / 1048576L).coerceAtLeast(1L)
             val (cmpRc, _) = runRootCommand(
-                "dd if=$blockPath of='${verifyTmp.absolutePath}' bs=1048576 count=$blocksCount && cmp -n $sizeBytes '${imageFile.absolutePath}' '${verifyTmp.absolutePath}'"
+                "dd if=$blockPath of=${shQuote(verifyTmp.absolutePath)} bs=1048576 count=$blocksCount && head -c $sizeBytes ${shQuote(verifyTmp.absolutePath)} | cmp -s - ${shQuote(imageFile.absolutePath)}"
             )
             verifyTmp.delete()
             if (cmpRc != 0) {

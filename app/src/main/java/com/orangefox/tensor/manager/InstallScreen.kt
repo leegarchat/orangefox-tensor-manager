@@ -171,6 +171,7 @@ fun InstallScreen(
     onStartDownload: (ReleaseInfo, ReleaseAsset) -> Unit,
     onDeleteCachedAsset: (ReleaseInfo, ReleaseAsset) -> Unit,
     onCopyCachedAssetToDownloads: (ReleaseInfo, ReleaseAsset) -> Unit,
+    onInstallBusyChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -271,6 +272,7 @@ fun InstallScreen(
                 backupRestoreDialogTarget = null
                 refreshLocalLists()
             },
+            onInstallBusyChange = onInstallBusyChange,
         )
     }
 
@@ -297,6 +299,7 @@ fun InstallScreen(
                     activeSubmenuTarget = null
                     refreshLocalLists()
                 },
+                onInstallBusyChange = onInstallBusyChange,
             )
         } else {
             val releases = ReleasesSessionCache.releases
@@ -749,6 +752,7 @@ private fun BackupRestoreModal(
     backup: BackupEntry,
     onDismiss: () -> Unit,
     onBackupRestored: () -> Unit,
+    onInstallBusyChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -760,6 +764,10 @@ private fun BackupRestoreModal(
     var isFlashing by remember { mutableStateOf(false) }
     var runOutcome by remember { mutableStateOf<InstallRunOutcome?>(null) }
     val logs = remember { mutableStateListOf<String>() }
+
+    LaunchedEffect(isFlashing) {
+        onInstallBusyChange(isFlashing)
+    }
 
     AlertDialog(
         onDismissRequest = { if (!isFlashing) onDismiss() },
@@ -873,6 +881,7 @@ private fun InstallerSubmenuView(
     prefs: AppPrefs,
     saveBackupDefault: Boolean,
     onBack: () -> Unit,
+    onInstallBusyChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -901,8 +910,19 @@ private fun InstallerSubmenuView(
     var runOutcome by remember { mutableStateOf<InstallRunOutcome?>(null) }
     val consoleLogs = remember { mutableStateListOf<String>() }
 
-    BackHandler(enabled = !isRunningInstall) {
-        onBack()
+    LaunchedEffect(isRunningInstall) {
+        onInstallBusyChange(isRunningInstall)
+    }
+
+    BackHandler {
+        if (!isRunningInstall) onBack()
+    }
+
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            customSourceImg?.delete()
+            customTouchLgz?.delete()
+        }
     }
 
     val customVendorBootPicker = rememberLauncherForActivityResult(
