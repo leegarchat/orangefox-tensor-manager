@@ -27,6 +27,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +49,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.orangefox.tensor.manager.ui.ExpressiveLinearProgress
 import com.orangefox.tensor.manager.ui.edgeOutline
 import kotlinx.coroutines.CoroutineScope
@@ -937,13 +939,17 @@ fun InstalledRecoveryStatusCard(
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Text(
-                                    text = stringResource(R.string.recovery_version_fmt, info.versionName),
+                                    text = info.versionName,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
+                                    autoSize = TextAutoSize.StepBased(
+                                        minFontSize = 10.sp,
+                                        stepSize = 1.sp,
+                                    ),
                                 )
                                 Text(
                                     text = stringResource(
