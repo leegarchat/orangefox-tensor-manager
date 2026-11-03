@@ -13,6 +13,10 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
+
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     signingConfigs {
@@ -42,7 +46,12 @@ android {
             applicationIdSuffix = ".debug"
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             signingConfig = signingConfigs.getByName("release")
         }
     }
