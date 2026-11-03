@@ -167,4 +167,5 @@
         <item quantity="other">↓ %1$d загрузок</item>
     </plurals>
     <string name="release_reactions">♥ %1$d</string>
+    <string name="action_open_github_release">Открыть релиз на GitHub</string>
 </resources>

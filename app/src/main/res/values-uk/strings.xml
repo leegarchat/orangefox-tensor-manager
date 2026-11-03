@@ -167,4 +167,5 @@
         <item quantity="other">↓ %1$d завантажень</item>
     </plurals>
     <string name="release_reactions">♥ %1$d</string>
+    <string name="action_open_github_release">Відкрити реліз на GitHub</string>
 </resources>

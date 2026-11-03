@@ -165,4 +165,5 @@
         <item quantity="other">↓ %1$d téléchargements</item>
     </plurals>
     <string name="release_reactions">♥ %1$d</string>
+    <string name="action_open_github_release">Ouvrir la version sur GitHub</string>
 </resources>

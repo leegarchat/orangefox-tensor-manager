@@ -164,4 +164,5 @@
         <item quantity="other">↓ %1$d 次下载</item>
     </plurals>
     <string name="release_reactions">♥ %1$d</string>
+    <string name="action_open_github_release">在 GitHub 上打开发布</string>
 </resources>

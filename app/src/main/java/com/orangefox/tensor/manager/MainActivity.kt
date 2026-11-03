@@ -2035,6 +2035,8 @@ private fun ReleaseCard(
                                 )
                             }
 
+                            OpenGitHubReleaseButton(tag = info.tag)
+
                             if (info.cleanBody.isNotBlank()) {
                                 MarkdownBody(
                                     md = info.cleanBody,
@@ -2064,6 +2066,29 @@ private fun ReleaseCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun OpenGitHubReleaseButton(tag: String) {
+    val uriHandler = LocalUriHandler.current
+    FilledTonalButton(
+        onClick = {
+            uriHandler.openUri("https://github.com/leegarchat/twrp_device_google_pixels/releases/tag/$tag")
+        },
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = stringResource(R.string.action_open_github_release),
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Icon(
+            painter = painterResource(R.drawable.ic_open_external),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
