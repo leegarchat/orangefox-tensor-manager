@@ -319,7 +319,26 @@ object RecoveryStateCache {
                     null
                 }
 
-                val activeLgzBin = ramdiskLgzBin ?: bundledLgz
+                var activeLgzBin = ramdiskLgzBin ?: bundledLgz
+                if (activeLgzBin == null) {
+                    // magiskboot ls на старых билдах показывает лишь ~90 из ~5000 записей —
+                    // тянем декодер по прямому имени.
+                    for (cand in listOf("system/bin/lgz", "sbin/lgz", "bin/lgz")) {
+                        val outBin = File(workDir, "ramdisk_lgz_direct")
+                        outBin.delete()
+                        val (lrc, _) = runSu("$mbPath cpio $cpioPath ${shQuote("extract $cand ${outBin.absolutePath}")}")
+                        if (lrc == 0 && outBin.isFile && outBin.length() > 0L &&
+                            !Files.isSymbolicLink(outBin.toPath())
+                        ) {
+                            runSu("chmod 755 ${shQuote(outBin.absolutePath)}")
+                            activeLgzBin = outBin
+                            Log.d(TAG, "slot $slot: direct lgz decoder -> $cand")
+                            break
+                        } else {
+                            outBin.delete()
+                        }
+                    }
+                }
 
                 // 2. Извлекаем prop.default / default.prop (обычный или сжатый в одиночный .lgz в старых билдах)
                 val propEntry = entries.firstOrNull {
@@ -379,6 +398,43 @@ object RecoveryStateCache {
                             runSu("chmod 666 ${shQuote(decTwrp.absolutePath)}")
                             if (decTwrp.isFile && decTwrp.length() > 0L) twrpFile = decTwrp
                         }
+                    }
+                }
+
+                // 3b. Прямое извлечение twrp по имени (для старых билдов без кластера;
+                // файлы пожаты поштучно в UCOMP01).
+                if (twrpFile == null) {
+                    for (cand in listOf("system/bin/twrp", "sbin/twrp")) {
+                        val rawTwrp = File(workDir, "raw_twrp_direct")
+                        rawTwrp.delete()
+                        runSu("$mbPath cpio $cpioPath ${shQuote("extract $cand ${rawTwrp.absolutePath}")} && chmod 666 ${shQuote(rawTwrp.absolutePath)}")
+                        if (!rawTwrp.isFile || rawTwrp.length() == 0L ||
+                            Files.isSymbolicLink(rawTwrp.toPath())
+                        ) {
+                            rawTwrp.delete()
+                            continue
+                        }
+                        val header7 = rawTwrp.inputStream().use { ins ->
+                            ByteArray(7).also { ins.read(it) }
+                        }
+                        if (header7.decodeToString() != "UCOMP01") {
+                            twrpFile = rawTwrp
+                            Log.d(TAG, "slot $slot: direct twrp -> $cand (plain)")
+                            break
+                        }
+                        val dec = activeLgzBin ?: bundledLgz
+                        if (dec != null) {
+                            val decTwrp = File(workDir, "dec_twrp_direct")
+                            decTwrp.delete()
+                            runSu("${shQuote(dec.absolutePath)} decompress ${shQuote(rawTwrp.absolutePath)} ${shQuote(decTwrp.absolutePath)}")
+                            runSu("chmod 666 ${shQuote(decTwrp.absolutePath)}")
+                            if (decTwrp.isFile && decTwrp.length() > 0L) {
+                                twrpFile = decTwrp
+                                Log.d(TAG, "slot $slot: direct twrp -> $cand (UCOMP01 decompressed)")
+                                break
+                            }
+                        }
+                        rawTwrp.delete()
                     }
                 }
 
