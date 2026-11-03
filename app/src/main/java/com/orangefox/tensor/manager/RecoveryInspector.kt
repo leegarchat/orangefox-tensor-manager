@@ -944,7 +944,7 @@ fun InstalledRecoveryStatusCard(
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 2,
+                                    maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     autoSize = TextAutoSize.StepBased(
                                         minFontSize = 10.sp,
