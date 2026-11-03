@@ -88,6 +88,8 @@ data class SlotRecoveryInfo(
     val romVersion: String,
     val losBased: Boolean,
     val buildFingerprint: String,
+    val buildIncremental: String,
+    val buildFlavor: String,
     val checkedAtMs: Long,
 )
 
@@ -165,6 +167,8 @@ object RecoveryStateCache {
     var hasRoot by mutableStateOf<Boolean?>(null)
     var initialized by mutableStateOf(false)
     var liveFingerprint by mutableStateOf("")
+    var liveIncremental by mutableStateOf("")
+    var liveFlavor by mutableStateOf("")
 
     private val mutex = Mutex()
 
@@ -181,8 +185,14 @@ object RecoveryStateCache {
                 try {
                     val cachedMap = loadDiskCache(context)
                     val sysSlot = readActiveSlotNonRoot()
-                    val liveFp = readLiveFingerprint()
-                    withContext(Dispatchers.Main) { liveFingerprint = liveFp }
+                    val liveFp = readLiveProp("ro.build.fingerprint")
+                    val liveInc = readLiveProp("ro.build.version.incremental")
+                    val liveFlav = readLiveProp("ro.build.flavor")
+                    withContext(Dispatchers.Main) {
+                        liveFingerprint = liveFp
+                        liveIncremental = liveInc
+                        liveFlavor = liveFlav
+                    }
                     withContext(Dispatchers.Main) {
                         activeSlot = sysSlot
                         if (slotInfo.isEmpty() && cachedMap.isNotEmpty()) {
@@ -230,15 +240,25 @@ object RecoveryStateCache {
         }
     }
 
-    private fun readLiveFingerprint(): String {
+    private fun readLiveProp(key: String): String {
         return try {
-            val proc = ProcessBuilder("getprop", "ro.build.fingerprint").start()
+            val proc = ProcessBuilder("getprop", key).start()
             val out = proc.inputStream.bufferedReader().readText().trim()
             proc.waitFor()
             out
         } catch (_: Exception) {
             ""
         }
+    }
+
+    /** Строгое совпадение: fingerprint часто спуфят, требуем три ключа. */
+    fun matchesLiveSystem(info: SlotRecoveryInfo): Boolean {
+        return info.buildFingerprint.isNotBlank() &&
+            info.buildIncremental.isNotBlank() &&
+            info.buildFlavor.isNotBlank() &&
+            info.buildFingerprint == liveFingerprint &&
+            info.buildIncremental == liveIncremental &&
+            info.buildFlavor == liveFlavor
     }
 
     private fun readActiveSlotNonRoot(): String {
@@ -383,6 +403,8 @@ object RecoveryStateCache {
                     romVersion = "",
                     losBased = false,
                     buildFingerprint = "",
+                    buildIncremental = "",
+                    buildFlavor = "",
                     checkedAtMs = System.currentTimeMillis(),
                 )
             }
@@ -627,6 +649,8 @@ object RecoveryStateCache {
                 romVersion = romVersion,
                 losBased = losBased,
                 buildFingerprint = props["ro.build.fingerprint"] ?: "",
+                buildIncremental = props["ro.build.version.incremental"] ?: "",
+                buildFlavor = props["ro.build.flavor"] ?: "",
                 checkedAtMs = System.currentTimeMillis(),
             )
         } finally {
@@ -663,6 +687,8 @@ object RecoveryStateCache {
                     romVersion = o.optString("romVersion", ""),
                     losBased = o.optBoolean("losBased", false),
                     buildFingerprint = o.optString("buildFingerprint", ""),
+                    buildIncremental = o.optString("buildIncremental", ""),
+                    buildFlavor = o.optString("buildFlavor", ""),
                     checkedAtMs = o.optLong("checkedAtMs", 0L),
                 )
             }
@@ -690,6 +716,8 @@ object RecoveryStateCache {
                         put("romVersion", info.romVersion)
                         put("losBased", info.losBased)
                         put("buildFingerprint", info.buildFingerprint)
+                        put("buildIncremental", info.buildIncremental)
+                        put("buildFlavor", info.buildFlavor)
                         put("checkedAtMs", info.checkedAtMs)
                     },
                 )
@@ -898,9 +926,7 @@ fun InstalledRecoveryStatusCard(
                                         )
                                     }
                                 }
-                                if (info != null && info.buildFingerprint.isNotBlank() &&
-                                    info.buildFingerprint == RecoveryStateCache.liveFingerprint
-                                ) {
+                                if (info != null && RecoveryStateCache.matchesLiveSystem(info)) {
                                     Surface(
                                         color = MaterialTheme.colorScheme.tertiaryContainer,
                                         shape = RoundedCornerShape(6.dp),
