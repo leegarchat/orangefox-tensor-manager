@@ -684,6 +684,7 @@ fun Root(
     var updatePromptedForCode by remember { mutableStateOf(0) }
     var pendingManagerApk by remember { mutableStateOf<ManagerUpdateOption?>(null) }
     var managerInstallFile by remember { mutableStateOf<Pair<File, Int>?>(null) }
+    var pendingNativeFile by remember { mutableStateOf<File?>(null) }
 
     fun beginManagerUpdate(opt: ManagerUpdateOption) {
         managerUpdateOffer = null
@@ -711,6 +712,15 @@ fun Root(
             }
             context.startActivity(intent)
         }
+    }
+
+    val unknownAppLauncher = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+    ) {
+        if (context.packageManager.canRequestPackageInstalls()) {
+            pendingNativeFile?.let { installManagerApkNative(it) }
+        }
+        pendingNativeFile = null
     }
 
     val releasesSnapshot = ReleasesSessionCache.releases
@@ -863,7 +873,22 @@ fun Root(
                     FilledTonalButton(
                         onClick = {
                             managerInstallFile = null
-                            installManagerApkNative(file)
+                            if (context.packageManager.canRequestPackageInstalls()) {
+                                installManagerApkNative(file)
+                            } else {
+                                pendingNativeFile = file
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.update_need_unknown_sources),
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                                unknownAppLauncher.launch(
+                                    android.content.Intent(
+                                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        android.net.Uri.parse("package:${context.packageName}"),
+                                    )
+                                )
+                            }
                         },
                         shape = RoundedCornerShape(14.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
