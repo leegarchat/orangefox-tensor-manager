@@ -56,6 +56,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -994,11 +995,12 @@ fun Root(
                             label = "TabHorizontalPadding",
                         )
 
-                        Row(
+                        // Хит-зона ×1.3 от визуала: кликает внешний Box,
+                        // обводка — только у активного таба.
+                        Box(
                             modifier = Modifier
+                                .defaultMinSize(minWidth = 62.dp, minHeight = 56.dp)
                                 .clip(CircleShape)
-                                .background(pillBg)
-                                .border(1.dp, pillBg.edgeOutline(), CircleShape)
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
@@ -1013,10 +1015,23 @@ fun Root(
                                     } else {
                                         tab = t
                                     }
-                                }
-                                .padding(horizontal = horizontalPad, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                                },
+                            contentAlignment = Alignment.Center,
                         ) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(pillBg)
+                                    .then(
+                                        if (selected) {
+                                            Modifier.border(1.dp, pillBg.edgeOutline(), CircleShape)
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
+                                    .padding(horizontal = horizontalPad, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                             Icon(
                                 painter = painterResource(t.icon),
                                 contentDescription = stringResource(t.label),
@@ -1050,6 +1065,7 @@ fun Root(
                                 }
                             }
                         }
+                    }
                     }
                 }
             }
@@ -1283,15 +1299,27 @@ private fun SettingsScreen(
                                 onClick = { uriHandler.openUri("https://t.me/OFRPforTensor") },
                                 shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier.weight(1f).height(48.dp).border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
+                                contentPadding = PaddingValues(horizontal = 8.dp),
                             ) {
-                                Text("@OFRPforTensor")
+                                Text(
+                                    text = "@OFRPforTensor",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                )
                             }
                             FilledTonalButton(
                                 onClick = { uriHandler.openUri("https://t.me/OFRPforTensorDiscussion") },
                                 shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier.weight(1f).height(48.dp).border(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline(), RoundedCornerShape(14.dp)),
+                                contentPadding = PaddingValues(horizontal = 8.dp),
                             ) {
-                                Text(stringResource(R.string.link_tg_discussion))
+                                Text(
+                                    text = stringResource(R.string.link_tg_discussion),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                )
                             }
                         }
 
