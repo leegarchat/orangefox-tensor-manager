@@ -185,5 +185,6 @@
     <string name="recovery_base_fmt">%1$s · From: %2$s</string>
     <string name="recovery_base_los">LOS Based</string>
     <string name="recovery_base_aosp">AOSP based</string>
+    <string name="recovery_base_twrp">TWRP based</string>
     <string name="recovery_running_now">running now</string>
 </resources>

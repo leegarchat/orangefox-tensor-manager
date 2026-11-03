@@ -955,10 +955,16 @@ fun InstalledRecoveryStatusCard(
                                 Text(
                                     text = stringResource(
                                         R.string.recovery_base_fmt,
-                                        if (info.losBased) {
-                                            stringResource(R.string.recovery_base_los)
-                                        } else {
-                                            stringResource(R.string.recovery_base_aosp)
+                                        when (info.type) {
+                                            InstalledRecoveryType.MY_OFOX,
+                                            InstalledRecoveryType.OTHER_OFOX,
+                                            InstalledRecoveryType.OTHER_TWRP,
+                                            -> stringResource(R.string.recovery_base_twrp)
+                                            else -> if (info.losBased) {
+                                                stringResource(R.string.recovery_base_los)
+                                            } else {
+                                                stringResource(R.string.recovery_base_aosp)
+                                            }
                                         },
                                         info.romName,
                                     ),
