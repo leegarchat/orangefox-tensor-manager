@@ -92,6 +92,52 @@ sealed interface InstallTargetRequest {
     data class FromBackup(val backup: BackupEntry) : InstallTargetRequest
 }
 
+object InstallSubmenuSession {
+    var activeTarget: InstallTargetRequest? = null
+    var preparedEnv by mutableStateOf<PreparedAioEnv?>(null)
+    var sourceMode by mutableStateOf(VendorBootSourceMode.LiveSlot)
+    var customSourceImg by mutableStateOf<File?>(null)
+    var destinationMode by mutableStateOf(InstallDestinationMode.FlashToBlock)
+    var targetSlot by mutableStateOf(TargetSlotOption.Both)
+    var strip16k by mutableStateOf(false)
+    var touchMode by mutableStateOf(TouchModuleMode.Auto)
+    var customTouchLgz by mutableStateOf<File?>(null)
+    var minFreeMb by mutableFloatStateOf(10f)
+    var layoutType by mutableStateOf(LayoutTypeOption.TypeA)
+    var runOutcome by mutableStateOf<InstallRunOutcome?>(null)
+    val consoleLogs = mutableStateListOf<String>()
+
+    fun ensureForTarget(target: InstallTargetRequest) {
+        if (activeTarget == target) return
+        customSourceImg?.delete()
+        customTouchLgz?.delete()
+        activeTarget = target
+        preparedEnv = null
+        sourceMode = VendorBootSourceMode.LiveSlot
+        customSourceImg = null
+        destinationMode = InstallDestinationMode.FlashToBlock
+        targetSlot = TargetSlotOption.Both
+        strip16k = false
+        touchMode = TouchModuleMode.Auto
+        customTouchLgz = null
+        minFreeMb = 10f
+        layoutType = LayoutTypeOption.TypeA
+        runOutcome = null
+        consoleLogs.clear()
+    }
+
+    fun clear() {
+        customSourceImg?.delete()
+        customTouchLgz?.delete()
+        activeTarget = null
+        preparedEnv = null
+        customSourceImg = null
+        customTouchLgz = null
+        runOutcome = null
+        consoleLogs.clear()
+    }
+}
+
 fun selectInstallAssetsForRelease(
     release: ReleaseInfo,
     downloads: Map<String, AssetDl>,
@@ -317,6 +363,14 @@ fun InstallScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                item(key = "installed_recovery_status") {
+                    InstalledRecoveryStatusCard(
+                        onManualRefresh = {
+                            RecoveryStateCache.refresh(context, scope, forceUnpack = true)
+                        },
+                    )
+                }
+
                 item(key = "top_controls") {
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -621,6 +675,7 @@ private fun LocalFileInstallCard(
                 FilledTonalButton(
                     onClick = onCopyToDownloads,
                     shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                     colors = ButtonDefaults.filledTonalButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -633,14 +688,15 @@ private fun LocalFileInstallCard(
                     Icon(
                         painter = painterResource(R.drawable.ic_download),
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(16.dp),
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text(
                         text = stringResource(R.string.action_copy_downloads),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -829,6 +885,9 @@ private fun BackupRestoreModal(
                                     scope.launch(Dispatchers.Main) { logs.add(line) }
                                 },
                             )
+                            if (runOutcome is InstallRunOutcome.Success) {
+                                RecoveryStateCache.refresh(context, scope, forceUnpack = false)
+                            }
                             isFlashing = false
                         }
                     },
@@ -858,43 +917,44 @@ private fun InstallerSubmenuView(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var isUnpacking by remember { mutableStateOf(target is InstallTargetRequest.FromAioFile) }
+    remember(target) { InstallSubmenuSession.ensureForTarget(target) }
+    var preparedEnv by InstallSubmenuSession::preparedEnv
+    var isUnpacking by remember(target) {
+        mutableStateOf(target is InstallTargetRequest.FromAioFile && preparedEnv == null)
+    }
     var unpackTitle by remember { mutableStateOf("") }
     var unpackSubtitle by remember { mutableStateOf("") }
     var unpackProgress by remember { mutableStateOf<Float?>(0.1f) }
     var unpackError by remember { mutableStateOf<String?>(null) }
-    var preparedEnv by remember { mutableStateOf<PreparedAioEnv?>(null) }
 
-    var sourceMode by remember { mutableStateOf(VendorBootSourceMode.LiveSlot) }
-    var customSourceImg by remember { mutableStateOf<File?>(null) }
-    var destinationMode by remember { mutableStateOf(InstallDestinationMode.FlashToBlock) }
-    var targetSlot by remember { mutableStateOf(TargetSlotOption.Both) }
-    var strip16k by remember { mutableStateOf(false) }
+    var sourceMode by InstallSubmenuSession::sourceMode
+    var customSourceImg by InstallSubmenuSession::customSourceImg
+    var destinationMode by InstallSubmenuSession::destinationMode
+    var targetSlot by InstallSubmenuSession::targetSlot
+    var strip16k by InstallSubmenuSession::strip16k
     var spaceErrorSeen by remember { mutableStateOf(prefs.spaceErrorSeen) }
     var saveBackup by remember { mutableStateOf(prefs.backupVendorBootOnFlash) }
 
-    var touchMode by remember { mutableStateOf(TouchModuleMode.Auto) }
-    var customTouchLgz by remember { mutableStateOf<File?>(null) }
-    var minFreeMb by remember { mutableFloatStateOf(10f) }
-    var layoutType by remember { mutableStateOf(LayoutTypeOption.TypeA) }
+    var touchMode by InstallSubmenuSession::touchMode
+    var customTouchLgz by InstallSubmenuSession::customTouchLgz
+    var minFreeMb by InstallSubmenuSession::minFreeMb
+    var layoutType by InstallSubmenuSession::layoutType
 
     var isRunningInstall by remember { mutableStateOf(false) }
-    var runOutcome by remember { mutableStateOf<InstallRunOutcome?>(null) }
-    val consoleLogs = remember { mutableStateListOf<String>() }
+    var runOutcome by InstallSubmenuSession::runOutcome
+    val consoleLogs = InstallSubmenuSession.consoleLogs
+
+    val handleBack = {
+        InstallSubmenuSession.clear()
+        onBack()
+    }
 
     LaunchedEffect(isRunningInstall) {
         onInstallBusyChange(isRunningInstall)
     }
 
     BackHandler {
-        if (!isRunningInstall) onBack()
-    }
-
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose {
-            customSourceImg?.delete()
-            customTouchLgz?.delete()
-        }
+        if (!isRunningInstall) handleBack()
     }
 
     val customVendorBootPicker = rememberLauncherForActivityResult(
@@ -935,7 +995,7 @@ private fun InstallerSubmenuView(
     }
 
     LaunchedEffect(target) {
-        if (target is InstallTargetRequest.FromAioFile) {
+        if (target is InstallTargetRequest.FromAioFile && preparedEnv == null) {
             isUnpacking = true
             unpackError = null
             RootInstallerEngine.prepareAioEnvironment(
@@ -988,7 +1048,7 @@ private fun InstallerSubmenuView(
                 ) {
                     androidx.compose.material3.IconButton(
                         enabled = !isRunningInstall,
-                        onClick = onBack,
+                        onClick = { handleBack() },
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_back),
@@ -1039,7 +1099,7 @@ private fun InstallerSubmenuView(
                             color = MaterialTheme.colorScheme.onErrorContainer,
                             style = MaterialTheme.typography.bodyMedium,
                         )
-                        Button(onClick = onBack) {
+                        Button(onClick = { handleBack() }) {
                             Text(stringResource(R.string.action_back))
                         }
                     }
@@ -1482,6 +1542,9 @@ private fun InstallerSubmenuView(
                                     prefs.spaceErrorSeen = true
                                 }
                                 runOutcome = outcome
+                                if (outcome is InstallRunOutcome.Success && outcome.flashedSlots.isNotEmpty()) {
+                                    RecoveryStateCache.refresh(context, scope, forceUnpack = false)
+                                }
                                 isRunningInstall = false
                             }
                         },

@@ -51,6 +51,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -113,6 +115,9 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -503,7 +508,7 @@ fun Root(
     val scope = rememberCoroutineScope()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var externalLaunchRequest by remember { mutableStateOf<InstallTargetRequest?>(null) }
-    var installBusy by rememberSaveable { mutableStateOf(false) }
+    var installBusy by remember { mutableStateOf(false) }
     // Подменю установщика живёт в Root, чтобы переживать переключение вкладок.
     var installSubmenuTarget by remember { mutableStateOf<InstallTargetRequest?>(null) }
     var focusReleaseTag by rememberSaveable { mutableStateOf<String?>(null) }
@@ -521,6 +526,9 @@ fun Root(
     val topBarH = 64.dp + statusTop
     val contentBg = MaterialTheme.colorScheme.surfaceContainer
     val floatingFilesState = remember { FloatingFilesButtonState() }
+    LaunchedEffect(Unit) {
+        RecoveryStateCache.ensureLoadedOnStartup(context, scope)
+    }
 
     fun startDownloadAsset(r: ReleaseInfo, asset: ReleaseAsset) {
         val key = "${r.tag}/${asset.name}"
@@ -958,26 +966,117 @@ fun Root(
                 }
             }
 
+            val dockHaptics = LocalHapticFeedback.current
+            var isDockPressed by remember { mutableStateOf(false) }
+            var pressedTab by remember { mutableStateOf<Tab?>(null) }
+            val tabBounds = remember { mutableStateMapOf<Tab, ClosedFloatingPointRange<Float>>() }
+
+            val dockScale by animateFloatAsState(
+                targetValue = if (isDockPressed) 1.045f else 1f,
+                animationSpec = spring(
+                    stiffness = Spring.StiffnessMedium,
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                ),
+                label = "DockBounceScale",
+            )
+
             BottomBlurBar(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp),
+                    .padding(bottom = 24.dp)
+                    .graphicsLayer {
+                        scaleX = dockScale
+                        scaleY = dockScale
+                    },
                 blurState = blurState,
                 blurRadius = blurRadius,
+                shape = CircleShape,
             ) {
-                val dockHaptics = LocalHapticFeedback.current
+                fun resolveTabAtX(x: Float): Tab? {
+                    tabBounds.entries.firstOrNull { x in it.value }?.let { return it.key }
+                    return tabBounds.entries.minByOrNull { entry ->
+                        val center = (entry.value.start + entry.value.endInclusive) * 0.5f
+                        kotlin.math.abs(x - center)
+                    }?.key
+                }
+
+                fun selectTabFromGesture(targetTab: Tab) {
+                    if (targetTab == tab) return
+                    if (installBusy) {
+                        dockHaptics.performHapticFeedback(HapticFeedbackType.Reject)
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.install_busy_cannot_switch),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    } else {
+                        dockHaptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        tab = targetTab
+                    }
+                }
+
+                // Концентрический отступ 6.dp со всех сторон:
+                // высота капсулы 46.dp, радиус скругления всегда идеально повторяет внешний контур.
                 Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .padding(6.dp)
+                        .pointerInput(installBusy) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                isDockPressed = true
+                                val initialHit = resolveTabAtX(down.position.x)
+                                pressedTab = initialHit
+                                if (initialHit != null && initialHit != tab) {
+                                    selectTabFromGesture(initialHit)
+                                } else {
+                                    dockHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                }
+
+                                try {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == down.id }
+                                            ?: event.changes.firstOrNull()
+                                        if (change == null || !change.pressed) break
+                                        val hit = resolveTabAtX(change.position.x)
+                                        pressedTab = hit
+                                        if (hit != null && hit != tab) {
+                                            selectTabFromGesture(hit)
+                                        }
+                                        change.consume()
+                                    }
+                                } finally {
+                                    isDockPressed = false
+                                    pressedTab = null
+                                }
+                            }
+                        },
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Tab.entries.forEach { t ->
                         val selected = t == tab
+                        val isFingerHere = pressedTab == t && isDockPressed
+
+                        val itemScale by animateFloatAsState(
+                            targetValue = when {
+                                isFingerHere && selected -> 0.94f
+                                isFingerHere -> 1.08f
+                                selected && isDockPressed -> 1.03f
+                                else -> 1f
+                            },
+                            animationSpec = spring(
+                                stiffness = Spring.StiffnessMedium,
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                            ),
+                            label = "TabItemBounce",
+                        )
+
                         val pillBg by animateColorAsState(
-                            targetValue = if (selected) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                Color.Transparent
+                            targetValue = when {
+                                selected -> MaterialTheme.colorScheme.primaryContainer
+                                isFingerHere -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.75f)
+                                else -> Color.Transparent
                             },
                             animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                             label = "TabBgColor",
@@ -988,72 +1087,60 @@ fun Root(
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },
-                            animationSpec = tween(220),
+                            animationSpec = tween(180),
                             label = "TabContentTint",
                         )
                         val horizontalPad by animateDpAsState(
-                            targetValue = if (selected) 16.dp else 12.dp,
+                            targetValue = if (selected) 16.dp else 14.dp,
                             animationSpec = spring(
-                                stiffness = Spring.StiffnessMediumLow,
-                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMedium,
+                                dampingRatio = Spring.DampingRatioLowBouncy,
                             ),
                             label = "TabHorizontalPadding",
                         )
 
-                        // Хит-зона ×1.3 от визуала: кликает внешний Box,
-                        // обводка — только у активного таба.
-                        Box(
+                        Row(
                             modifier = Modifier
-                                .defaultMinSize(minWidth = 62.dp, minHeight = 56.dp)
+                                .height(46.dp)
+                                .onPlaced { coords ->
+                                    val x = coords.positionInParent().x
+                                    tabBounds[t] = x..(x + coords.size.width)
+                                }
+                                .graphicsLayer {
+                                    scaleX = itemScale
+                                    scaleY = itemScale
+                                }
                                 .clip(CircleShape)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                ) {
-                                    if (installBusy && t != tab) {
-                                        dockHaptics.performHapticFeedback(HapticFeedbackType.Reject)
-                                        Toast.makeText(
-                                            context,
-                                            context.getString(R.string.install_busy_cannot_switch),
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
+                                .background(pillBg)
+                                .then(
+                                    if (selected) {
+                                        Modifier.border(1.dp, pillBg.edgeOutline(), CircleShape)
                                     } else {
-                                        tab = t
+                                        Modifier
                                     }
-                                },
-                            contentAlignment = Alignment.Center,
+                                )
+                                .padding(horizontal = horizontalPad),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(pillBg)
-                                    .then(
-                                        if (selected) {
-                                            Modifier.border(1.dp, pillBg.edgeOutline(), CircleShape)
-                                        } else {
-                                            Modifier
-                                        }
-                                    )
-                                    .padding(horizontal = horizontalPad, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
                             Icon(
                                 painter = painterResource(t.icon),
                                 contentDescription = stringResource(t.label),
                                 tint = contentTint,
+                                modifier = Modifier.size(20.dp),
                             )
                             AnimatedVisibility(
                                 visible = selected,
-                                enter = fadeIn(tween(200)) + expandHorizontally(
+                                enter = fadeIn(tween(180)) + expandHorizontally(
                                     animationSpec = spring(
-                                        stiffness = Spring.StiffnessMediumLow,
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMedium,
+                                        dampingRatio = Spring.DampingRatioLowBouncy,
                                     ),
                                     expandFrom = Alignment.Start,
                                 ),
-                                exit = fadeOut(tween(150)) + shrinkHorizontally(
+                                exit = fadeOut(tween(120)) + shrinkHorizontally(
                                     animationSpec = spring(
-                                        stiffness = Spring.StiffnessMediumLow,
+                                        stiffness = Spring.StiffnessMedium,
                                         dampingRatio = Spring.DampingRatioNoBouncy,
                                     ),
                                     shrinkTowards = Alignment.Start,
@@ -1065,12 +1152,12 @@ fun Root(
                                         text = stringResource(t.label),
                                         color = contentTint,
                                         style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                     )
                                 }
                             }
                         }
-                    }
                     }
                 }
             }
@@ -1559,7 +1646,7 @@ fun ReleasesScreen(
     var viewportBottomInRoot by remember { mutableFloatStateOf(0f) }
     val bottomDockClearancePx = with(density) { 94.dp.toPx() }
     val topInsetPx = with(density) { topInset.toPx() }
-    val cardMetrics = remember { HashMap<String, CardViewportMetrics>() }
+    val cardMetrics = remember { mutableStateMapOf<String, CardViewportMetrics>() }
     var highlightedReleaseTag by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
@@ -1848,8 +1935,11 @@ fun ReleasesScreen(
         LaunchedEffect(scrollingToFiles) {
             floatingFilesState.isScrolling = scrollingToFiles
         }
+        val currentScrollToAnchor by androidx.compose.runtime.rememberUpdatedState(
+            newValue = { rel: ReleaseInfo -> scrollToAnchorCentered(rel) }
+        )
         DisposableEffect(Unit) {
-            floatingFilesState.onClick = { rel -> scrollToAnchorCentered(rel) }
+            floatingFilesState.onClick = { rel -> currentScrollToAnchor(rel) }
             onDispose {
                 floatingFilesState.targetRelease = null
                 floatingFilesState.onClick = null
@@ -2383,6 +2473,7 @@ internal fun AssetRow(
                     FilledTonalButton(
                         onClick = onCopyToDownloads,
                         shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                         colors = ButtonDefaults.filledTonalButtonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -2403,6 +2494,7 @@ internal fun AssetRow(
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }

@@ -9,7 +9,7 @@
     <string name="action_download">Download</string>
     <string name="action_install">Install</string>
     <string name="action_delete">Delete</string>
-    <string name="action_copy_downloads">Copy to Downloads</string>
+    <string name="action_copy_downloads">Save to Downloads</string>
     <string name="action_expand_releases">Releases (%1$d) — Expand</string>
     <string name="action_collapse_releases">Releases (%1$d) — Collapse</string>
     <string name="action_go_to_files">To releases • %1$s</string>
@@ -83,7 +83,7 @@
     <string name="action_pick_vendor_boot_img">Pick vendor_boot.img</string>
     <string name="install_destination_title">What to do</string>
     <string name="dest_flash_block">Flash to block</string>
-    <string name="dest_save_downloads">Save to Downloads</string>
+    <string name="dest_save_downloads">To Downloads</string>
     <string name="install_slot_with_active_hint">Target slot (active slot: %1$s)</string>
     <string name="install_select_target_slot">Target slot to write</string>
     <string name="space_error_title">Not enough free space in vendor_boot</string>
@@ -165,4 +165,20 @@
     </plurals>
     <string name="release_reactions">♥ %1$d</string>
     <string name="action_open_github_release">Open release on GitHub</string>
+    <!-- Installed recovery inspector -->
+    <string name="recovery_status_title">Installed Recovery</string>
+    <string name="recovery_slot_label">Slot %1$s</string>
+    <string name="recovery_slot_active_badge">ACTIVE</string>
+    <string name="recovery_type_my_ofox">OrangeFox Official (Leegar)</string>
+    <string name="recovery_type_other_ofox">OrangeFox (Unofficial / Other)</string>
+    <string name="recovery_type_twrp">TWRP Recovery</string>
+    <string name="recovery_type_los">LineageOS Recovery</string>
+    <string name="recovery_type_stock">Stock Recovery (AOSP)</string>
+    <string name="recovery_type_unknown">Unknown / Custom Boot</string>
+    <string name="recovery_build_date">Build date: %1$s</string>
+    <string name="recovery_version_fmt">Version: %1$s</string>
+    <string name="recovery_inspecting">Inspecting vendor_boot slots…</string>
+    <string name="recovery_no_root_cached_warn">Root access is not granted. Showing last cached info — actual recovery on device may differ!</string>
+    <string name="recovery_no_root_empty">Root access is required to read and identify installed recovery from vendor_boot.</string>
+    <string name="action_recheck_recovery">Refresh</string>
 </resources>

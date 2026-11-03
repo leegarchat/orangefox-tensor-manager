@@ -168,4 +168,20 @@
     </plurals>
     <string name="release_reactions">♥ %1$d</string>
     <string name="action_open_github_release">Открыть релиз на GitHub</string>
+    <!-- Инспектор установленного рекавери -->
+    <string name="recovery_status_title">Установленный Recovery</string>
+    <string name="recovery_slot_label">Слот %1$s</string>
+    <string name="recovery_slot_active_badge">АКТИВЕН</string>
+    <string name="recovery_type_my_ofox">OrangeFox (Мой билд • Leegar)</string>
+    <string name="recovery_type_other_ofox">OrangeFox (Сторонний билд)</string>
+    <string name="recovery_type_twrp">TWRP Recovery</string>
+    <string name="recovery_type_los">LineageOS Recovery</string>
+    <string name="recovery_type_stock">Стоковый Recovery (AOSP)</string>
+    <string name="recovery_type_unknown">Неизвестный образ</string>
+    <string name="recovery_build_date">Дата сборки: %1$s</string>
+    <string name="recovery_version_fmt">Версия: %1$s</string>
+    <string name="recovery_inspecting">Анализ разделов vendor_boot…</string>
+    <string name="recovery_no_root_cached_warn">Рут-права не предоставлены! Показана последняя сохранённая информация — не факт, что сейчас у вас установлено именно это.</string>
+    <string name="recovery_no_root_empty">Для определения установленного рекавери требуются root-права.</string>
+    <string name="action_recheck_recovery">Обновить</string>
 </resources>

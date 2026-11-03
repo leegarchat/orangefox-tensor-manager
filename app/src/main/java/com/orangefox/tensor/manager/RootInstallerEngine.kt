@@ -102,6 +102,15 @@ sealed interface InstallRunOutcome {
 }
 
 object RootInstallerEngine {
+    @Volatile
+    private var cachedAioKey: String? = null
+    @Volatile
+    private var cachedAioEnv: PreparedAioEnv? = null
+
+    fun invalidatePreparedAioCache() {
+        cachedAioKey = null
+        cachedAioEnv = null
+    }
 
     suspend fun checkRootAccess(): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -306,6 +315,16 @@ object RootInstallerEngine {
     ): Result<PreparedAioEnv> = withContext(Dispatchers.IO) {
         try {
             val (deviceCodename, activeSlot) = getDeviceOverview()
+            val cacheKey = "${zipFile.absolutePath}:${zipFile.length()}:${zipFile.lastModified()}:$deviceCodename:$activeSlot"
+            val existing = cachedAioEnv
+            if (cachedAioKey == cacheKey &&
+                existing != null &&
+                existing.workDir.isDirectory &&
+                existing.installerBin.isFile &&
+                existing.payloadLz4.isFile
+            ) {
+                return@withContext Result.success(existing)
+            }
 
             // Удаляем старый общий кэш бинарников (если остался от прошлых версий)
             File(context.filesDir, "shared_installer_bin").deleteRecursively()
@@ -422,18 +441,19 @@ object RootInstallerEngine {
                 context.getString(R.string.unpack_step_done_sub),
                 1f,
             )
-            Result.success(
-                PreparedAioEnv(
-                    workDir = workDir,
-                    installerBin = resolvedBin,
-                    payloadLz4 = finalPayload,
-                    modulesDir = modulesDir,
-                    supportsStrip16k = supportsStrip16k,
-                    deviceCodename = deviceCodename,
-                    activeSlot = activeSlot,
-                    availableModuleLgz = deviceModule,
-                )
+            val prepared = PreparedAioEnv(
+                workDir = workDir,
+                installerBin = resolvedBin,
+                payloadLz4 = finalPayload,
+                modulesDir = modulesDir,
+                supportsStrip16k = supportsStrip16k,
+                deviceCodename = deviceCodename,
+                activeSlot = activeSlot,
+                availableModuleLgz = deviceModule,
             )
+            cachedAioKey = cacheKey
+            cachedAioEnv = prepared
+            Result.success(prepared)
         } catch (e: Exception) {
             Result.failure(e)
         }
