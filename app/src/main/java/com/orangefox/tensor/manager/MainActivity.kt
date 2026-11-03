@@ -205,6 +205,7 @@ object ReleasesSessionCache {
     private val ioScope = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
     private val downloadJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
     private val downloadCalls = mutableMapOf<String, okhttp3.Call>()
+    private val cancelledKeys = mutableSetOf<String>()
     var releases by mutableStateOf<List<ReleaseInfo>?>(null)
     var listError by mutableStateOf<String?>(null)
     var isRefreshing by mutableStateOf(false)
@@ -231,12 +232,19 @@ object ReleasesSessionCache {
                     downloads[key] = AssetDl.Done(dest.absolutePath)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
+                synchronized(cancelledKeys) { cancelledKeys.remove(key) }
                 downloads.remove(key)
                 File(cacheDir, "${r.tag}__$safeName").delete()
                 throw e
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    downloads[key] = AssetDl.Error(e.message ?: "download failed")
+                val wasCancelled = synchronized(cancelledKeys) { cancelledKeys.remove(key) }
+                if (wasCancelled) {
+                    downloads.remove(key)
+                    File(cacheDir, "${r.tag}__$safeName").delete()
+                } else {
+                    withContext(Dispatchers.Main) {
+                        downloads[key] = AssetDl.Error(e.message ?: "download failed")
+                    }
                 }
             } finally {
                 downloadCalls.remove(key)
@@ -248,6 +256,7 @@ object ReleasesSessionCache {
 
     fun cancelDownload(r: ReleaseInfo, asset: ReleaseAsset) {
         val key = "${r.tag}/${asset.name}"
+        synchronized(cancelledKeys) { cancelledKeys.add(key) }
         downloadCalls.remove(key)?.cancel()
         downloadJobs.remove(key)?.cancel()
         downloads.remove(key)
@@ -256,6 +265,7 @@ object ReleasesSessionCache {
     fun cancelAllDownloads() {
         downloadCalls.values.forEach { runCatching { it.cancel() } }
         downloadJobs.values.forEach { it.cancel() }
+        synchronized(cancelledKeys) { cancelledKeys.addAll(downloadJobs.keys) }
         downloadCalls.clear()
         downloadJobs.clear()
         downloads.keys.toList().forEach { key ->
