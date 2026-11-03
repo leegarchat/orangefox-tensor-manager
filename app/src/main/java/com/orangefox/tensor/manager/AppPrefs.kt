@@ -1,4 +1,4 @@
-package com.orangefox.manager
+package com.orangefox.tensor.manager
 
 import android.content.Context
 import androidx.annotation.StringRes

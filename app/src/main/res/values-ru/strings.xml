@@ -156,4 +156,6 @@
     <string name="log_pad_failed">✘ Не удалось дополнить %1$s нулями: %2$s</string>
     <string name="install_pad_failed">Не удалось дополнить образ %1$s до размера раздела</string>
     <string name="install_unexpected_error">Неожиданная ошибка: %1$s</string>
+    <string name="app_name">Менеджер OrangeFox для Pixel Tensor Series</string>
+    <string name="app_name_short">Менеджер OFox Tensor</string>
 </resources>

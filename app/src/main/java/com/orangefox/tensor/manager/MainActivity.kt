@@ -1,4 +1,4 @@
-package com.orangefox.manager
+package com.orangefox.tensor.manager
 
 import android.app.Activity
 import android.content.ContentValues
@@ -123,17 +123,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.orangefox.manager.ui.BottomBlurBar
-import com.orangefox.manager.ui.ExpandableGroupCard
-import com.orangefox.manager.ui.ExpressiveSegmentedRow
-import com.orangefox.manager.ui.GraphicsLayerRecordingState
-import com.orangefox.manager.ui.MarkdownBody
-import com.orangefox.manager.ui.NetworkBannerImage
-import com.orangefox.manager.ui.SettingSlider
-import com.orangefox.manager.ui.TopBarBlurOverlay
-import com.orangefox.manager.ui.extractBannerAndCleanMarkdown
-import com.orangefox.manager.ui.recordLayer
-import com.orangefox.manager.ui.rememberGraphicsLayerRecordingState
+import com.orangefox.tensor.manager.ui.BottomBlurBar
+import com.orangefox.tensor.manager.ui.ExpandableGroupCard
+import com.orangefox.tensor.manager.ui.ExpressiveSegmentedRow
+import com.orangefox.tensor.manager.ui.GraphicsLayerRecordingState
+import com.orangefox.tensor.manager.ui.MarkdownBody
+import com.orangefox.tensor.manager.ui.NetworkBannerImage
+import com.orangefox.tensor.manager.ui.SettingSlider
+import com.orangefox.tensor.manager.ui.TopBarBlurOverlay
+import com.orangefox.tensor.manager.ui.extractBannerAndCleanMarkdown
+import com.orangefox.tensor.manager.ui.recordLayer
+import com.orangefox.tensor.manager.ui.rememberGraphicsLayerRecordingState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1739,7 +1739,7 @@ fun ReleasesScreen(
                         modifier = Modifier.padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        com.orangefox.manager.ui.ExpressiveLinearProgress()
+                        com.orangefox.tensor.manager.ui.ExpressiveLinearProgress()
                         Text(stringResource(R.string.releases_loading))
                     }
                 }
@@ -2232,14 +2232,14 @@ internal fun AssetRow(
             }
             is AssetDl.Downloading -> {
                 if (state.progress != null) {
-                    com.orangefox.manager.ui.ExpressiveLinearProgress(progress = state.progress)
+                    com.orangefox.tensor.manager.ui.ExpressiveLinearProgress(progress = state.progress)
                     Text(
                         text = stringResource(R.string.asset_downloading, (state.progress * 100).toInt()),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     )
                 } else {
-                    com.orangefox.manager.ui.ExpressiveLinearProgress()
+                    com.orangefox.tensor.manager.ui.ExpressiveLinearProgress()
                     Text(
                         text = stringResource(R.string.asset_downloading_indeterminate),
                         style = MaterialTheme.typography.bodySmall,

@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.orangefox.manager"
+    namespace = "com.orangefox.tensor.manager"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.orangefox.manager"
+        applicationId = "com.orangefox.tensor.manager"
         minSdk = 26
         targetSdk = 37
         versionCode = 1

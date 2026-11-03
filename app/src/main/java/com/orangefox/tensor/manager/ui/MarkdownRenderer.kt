@@ -1,4 +1,4 @@
-package com.orangefox.manager.ui
+package com.orangefox.tensor.manager.ui
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -70,7 +70,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import com.orangefox.manager.R
+import com.orangefox.tensor.manager.R
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

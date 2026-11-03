@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">PixelOFox</string>
-    <string name="tab_home">Home</string>
+<resources>    <string name="tab_home">Home</string>
     <string name="tab_releases">Releases</string>
     <string name="tab_install">Install</string>
     <string name="tab_settings">Settings</string>
@@ -157,4 +155,6 @@
     <string name="log_pad_failed">✘ Failed to pad %1$s: %2$s</string>
     <string name="install_pad_failed">Failed to pad image %1$s to partition size</string>
     <string name="install_unexpected_error">Unexpected error: %1$s</string>
+    <string name="app_name">OrangeFox Manager for Pixel Tensor Series</string>
+    <string name="app_name_short">OFox Tensor Manager</string>
 </resources>

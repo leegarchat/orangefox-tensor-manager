@@ -1,4 +1,4 @@
-package com.orangefox.manager.ui
+package com.orangefox.tensor.manager.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -64,7 +64,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.orangefox.manager.R
+import com.orangefox.tensor.manager.R
 
 @Composable
 fun <T> ExpressiveSegmentedRow(

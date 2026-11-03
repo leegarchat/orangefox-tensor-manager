@@ -1,4 +1,4 @@
-package com.orangefox.manager
+package com.orangefox.tensor.manager
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,7 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
-import com.orangefox.manager.ui.ExpressiveLinearProgress
+import com.orangefox.tensor.manager.ui.ExpressiveLinearProgress
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -28,10 +28,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.orangefox.manager.ui.DocLink
-import com.orangefox.manager.ui.MarkdownBody
-import com.orangefox.manager.ui.NetworkBannerImage
-import com.orangefox.manager.ui.extractBannerAndCleanMarkdown
+import com.orangefox.tensor.manager.ui.DocLink
+import com.orangefox.tensor.manager.ui.MarkdownBody
+import com.orangefox.tensor.manager.ui.NetworkBannerImage
+import com.orangefox.tensor.manager.ui.extractBannerAndCleanMarkdown
 
 /** Состояние навигации Home для круглых кнопок в Root (вне записываемого слоя блюра). */
 class HomeNavState {

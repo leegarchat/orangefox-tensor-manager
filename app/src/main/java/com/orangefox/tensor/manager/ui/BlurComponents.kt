@@ -1,4 +1,4 @@
-package com.orangefox.manager.ui
+package com.orangefox.tensor.manager.ui
 
 import android.graphics.RenderEffect
 import android.graphics.RenderNode

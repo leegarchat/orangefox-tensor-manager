@@ -1,4 +1,4 @@
-package com.orangefox.manager.ui
+package com.orangefox.tensor.manager.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -37,7 +37,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.orangefox.manager.R
+import com.orangefox.tensor.manager.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

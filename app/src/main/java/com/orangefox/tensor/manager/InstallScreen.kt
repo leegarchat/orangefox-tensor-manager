@@ -1,4 +1,4 @@
-package com.orangefox.manager
+package com.orangefox.tensor.manager
 
 import android.content.Context
 import android.net.Uri
@@ -74,11 +74,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.orangefox.manager.ui.ExpandableGroupCard
-import com.orangefox.manager.ui.ExpressiveUnpackCard
-import com.orangefox.manager.ui.ExpressiveLinearProgress
-import com.orangefox.manager.ui.ExpressiveSegmentedRow
-import com.orangefox.manager.ui.SettingSlider
+import com.orangefox.tensor.manager.ui.ExpandableGroupCard
+import com.orangefox.tensor.manager.ui.ExpressiveUnpackCard
+import com.orangefox.tensor.manager.ui.ExpressiveLinearProgress
+import com.orangefox.tensor.manager.ui.ExpressiveSegmentedRow
+import com.orangefox.tensor.manager.ui.SettingSlider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
