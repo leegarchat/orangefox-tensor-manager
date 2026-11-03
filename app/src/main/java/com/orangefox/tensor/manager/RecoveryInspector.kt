@@ -56,7 +56,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import android.util.Log
 import java.io.File
+import java.nio.file.Files
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -83,6 +85,7 @@ data class SlotRecoveryInfo(
 )
 
 object RecoveryStateCache {
+    private const val TAG = "RecoveryInspector"
     var slotInfo = mutableStateMapOf<String, SlotRecoveryInfo>()
     var activeSlot by mutableStateOf("a")
     var isInspecting by mutableStateOf(false)
@@ -250,8 +253,11 @@ object RecoveryStateCache {
         blockPath: String,
         blockSha256: String,
     ): SlotRecoveryInfo? {
-        val magiskboot = resolveNativeTool(context, "libmagiskboot.so", "magiskboot") ?: return null
+        val magiskboot = resolveNativeTool(context, "libmagiskboot.so", "magiskboot")
+        Log.d(TAG, "slot $slot: magiskboot=${magiskboot?.absolutePath} exists=${magiskboot?.isFile}")
+        if (magiskboot == null) return null
         val bundledLgz = resolveNativeTool(context, "liblgz.so", "lgz-lean-linux-arm64")
+        Log.d(TAG, "slot $slot: bundledLgz=${bundledLgz?.absolutePath} exists=${bundledLgz?.isFile}")
 
         val workDir = File(context.cacheDir, "slot_inspect_$slot")
         runSu("rm -rf ${shQuote(workDir.absolutePath)}")
@@ -317,8 +323,9 @@ object RecoveryStateCache {
 
                 // 2. Извлекаем prop.default / default.prop (обычный или сжатый в одиночный .lgz в старых билдах)
                 val propEntry = entries.firstOrNull {
-                    it == "prop.default" || it == "default.prop" || it.endsWith("/prop.default")
+                    it == "prop.default" || it.endsWith("/prop.default")
                 }
+                Log.d(TAG, "slot $slot: cpio=${cpio.name} entries=${entries.size} prop=$propEntry twrpCand=${entries.firstOrNull { it == "system/bin/twrp" || it == "sbin/twrp" || it == "system/bin/twrp.lgz" }} lgzCount=${entries.count { it.endsWith(".lgz", ignoreCase = true) }}")
                 val propLgzEntry = entries.firstOrNull {
                     it == "prop.default.lgz" || it.endsWith("/prop.default.lgz")
                 }
@@ -326,6 +333,10 @@ object RecoveryStateCache {
                 if (propEntry != null && propText.isEmpty()) {
                     val rawProp = File(workDir, "extracted_prop")
                     runSu("$mbPath cpio $cpioPath ${shQuote("extract $propEntry ${rawProp.absolutePath}")} && chmod 666 ${shQuote(rawProp.absolutePath)}")
+                    if (rawProp.isFile && Files.isSymbolicLink(rawProp.toPath())) {
+                        Log.d(TAG, "slot $slot: $propEntry extracted as symlink, deleting")
+                        rawProp.delete()
+                    }
                     if (rawProp.isFile && rawProp.length() > 0L) {
                         val content = rawProp.readText()
                         if (content.contains("ro.")) {
@@ -353,6 +364,10 @@ object RecoveryStateCache {
                 if (directTwrpEntry != null && twrpFile == null) {
                     val rawTwrp = File(workDir, "raw_twrp")
                     runSu("$mbPath cpio $cpioPath ${shQuote("extract $directTwrpEntry ${rawTwrp.absolutePath}")} && chmod 666 ${shQuote(rawTwrp.absolutePath)}")
+                    if (rawTwrp.isFile && Files.isSymbolicLink(rawTwrp.toPath())) {
+                        Log.d(TAG, "slot $slot: $directTwrpEntry extracted as symlink, deleting")
+                        rawTwrp.delete()
+                    }
                     if (rawTwrp.isFile && rawTwrp.length() > 0L) {
                         val header = rawTwrp.inputStream().use { ins -> ByteArray(4).also { ins.read(it) } }
                         val isElf = header.size == 4 && header[0] == 0x7F.toByte() && header[1] == 'E'.code.toByte()
@@ -378,14 +393,14 @@ object RecoveryStateCache {
                     val lgzExec = bundledLgz ?: activeLgzBin ?: continue
                     val singleDir = File(workDir, "single_out").apply { mkdirs() }
                     if (twrpFile == null) {
-                        runSu("${shQuote(lgzExec.absolutePath)} extract ${shQuote(clFile.absolutePath)} system/bin/twrp ${shQuote(singleDir.absolutePath)} --flatten --no-meta && chmod -R 666 ${shQuote(singleDir.absolutePath)}")
+                        runSu("${shQuote(lgzExec.absolutePath)} extract ${shQuote(clFile.absolutePath)} system/bin/twrp ${shQuote(singleDir.absolutePath)} --flatten --no-meta && chmod 755 ${shQuote(singleDir.absolutePath)} && chmod 666 ${shQuote(singleDir.absolutePath)}/*")
                         val extracted = File(singleDir, "twrp")
                         if (extracted.isFile && extracted.length() > 0L) {
                             twrpFile = extracted
                         }
                     }
                     if (propText.isEmpty()) {
-                        runSu("${shQuote(lgzExec.absolutePath)} extract ${shQuote(clFile.absolutePath)} prop.default ${shQuote(singleDir.absolutePath)} --flatten --no-meta && chmod -R 666 ${shQuote(singleDir.absolutePath)}")
+                        runSu("${shQuote(lgzExec.absolutePath)} extract ${shQuote(clFile.absolutePath)} prop.default ${shQuote(singleDir.absolutePath)} --flatten --no-meta && chmod 755 ${shQuote(singleDir.absolutePath)} && chmod 666 ${shQuote(singleDir.absolutePath)}/*")
                         val extractedProp = File(singleDir, "prop.default")
                         if (extractedProp.isFile && extractedProp.length() > 0L) {
                             propText = extractedProp.readText()
@@ -446,6 +461,7 @@ object RecoveryStateCache {
                 else -> "—"
             }
 
+            Log.d(TAG, "slot $slot: props=${props.size} twrpVer=$twrpVer foxBin=$hasFoxBinMarker host=$buildHost utc=$utcSec -> $type")
             return SlotRecoveryInfo(
                 slot = slot,
                 blockSha256 = blockSha256,
