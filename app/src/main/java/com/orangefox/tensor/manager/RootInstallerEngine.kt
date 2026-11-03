@@ -194,6 +194,39 @@ object RootInstallerEngine {
         dev to slot
     }
 
+    /**
+     * Установка APK менеджера через root: копирует в /data/local/tmp
+     * (системный pm не видит приватный кеш приложения) и ставит `pm install -r`.
+     * Возвращает null при успехе или текст ошибки.
+     */
+    suspend fun installApkViaRoot(
+        context: Context,
+        apkFile: File,
+        onLog: (String) -> Unit = {},
+    ): String? = withContext(Dispatchers.IO) {
+        if (!apkFile.isFile || apkFile.length() == 0L) {
+            return@withContext context.getString(R.string.install_raw_no_file)
+        }
+        val staged = File("/data/local/tmp/ofox_manager_update.apk")
+        val (cpRc, cpOut) = runRootCommand(
+            "cp ${shQuote(apkFile.absolutePath)} ${shQuote(staged.absolutePath)} && chmod 644 ${shQuote(staged.absolutePath)}",
+            timeoutSec = 60,
+        )
+        if (cpRc != 0 || !staged.isFile) {
+            return@withContext "cp: $cpOut"
+        }
+        val (rc, out) = runRootCommand(
+            "pm install -r ${shQuote(staged.absolutePath)}",
+            timeoutSec = 180,
+        )
+        runRootCommand("rm -f ${shQuote(staged.absolutePath)}", timeoutSec = 15)
+        onLog(out)
+        if (rc == 0 && out.contains("Success", ignoreCase = true)) {
+            return@withContext null
+        }
+        return@withContext out.ifBlank { "pm exit $rc" }
+    }
+
     suspend fun rebootToRecovery(): Boolean = withContext(Dispatchers.IO) {
         val (rc, _) = runRootCommand("reboot recovery || setprop sys.powerctl reboot,recovery")
         rc == 0

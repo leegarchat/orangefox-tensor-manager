@@ -47,6 +47,10 @@ class AppPrefs(context: Context) {
         get() = sp.getBoolean(KEY_SPACE_ERROR_SEEN, false)
         set(v) { sp.edit().putBoolean(KEY_SPACE_ERROR_SEEN, v).apply() }
 
+    var refusedManagerUpdateCode: Int
+        get() = sp.getInt(KEY_REFUSED_MGR_UPDATE, 0)
+        set(v) { sp.edit().putInt(KEY_REFUSED_MGR_UPDATE, v).apply() }
+
     var lastNotifiedReleaseTag: String
         get() = sp.getString(KEY_LAST_NOTIFIED_TAG, "") ?: ""
         set(v) { sp.edit().putString(KEY_LAST_NOTIFIED_TAG, v).apply() }
@@ -64,6 +68,7 @@ class AppPrefs(context: Context) {
         private const val KEY_BACKUP_ON_FLASH = "backup_vendor_boot_on_flash"
         private const val KEY_SPACE_ERROR_SEEN = "space_error_seen"
         private const val KEY_LAST_NOTIFIED_TAG = "last_notified_release_tag"
+        private const val KEY_REFUSED_MGR_UPDATE = "refused_manager_update_code"
     }
 }
 

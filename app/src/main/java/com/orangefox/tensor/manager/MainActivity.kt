@@ -170,6 +170,44 @@ private const val RELEASES_URL =
 
 internal val sharedHttpClient = OkHttpClient()
 
+/** Менеджер-APK в релизах: orangefox*tensor*manager*{versionCode}*.apk */
+internal fun isManagerApkAsset(name: String): Boolean {
+    val low = name.lowercase()
+    return low.endsWith(".apk") && "orangefox" in low && "tensor" in low && "manager" in low
+}
+
+/** versionCode — последняя группа цифр в имени файла. */
+internal fun managerApkVersionCode(name: String): Int? {
+    if (!isManagerApkAsset(name)) return null
+    val base = name.substringBeforeLast('.', name)
+    return Regex("""\d+""").findAll(base).lastOrNull()?.value?.toIntOrNull()
+}
+
+data class ManagerUpdateOption(
+    val release: ReleaseInfo,
+    val asset: ReleaseAsset,
+    val code: Int,
+)
+
+/** Лучший стабильный и лучший бета-кандидат среди ВСЕХ релизов (включая пререлизы). */
+internal fun findManagerUpdates(releases: List<ReleaseInfo>?): Pair<ManagerUpdateOption?, ManagerUpdateOption?> {
+    if (releases.isNullOrEmpty()) return null to null
+    var stable: ManagerUpdateOption? = null
+    var beta: ManagerUpdateOption? = null
+    for (rel in releases) {
+        for (a in rel.assets) {
+            val code = managerApkVersionCode(a.name) ?: continue
+            val opt = ManagerUpdateOption(rel, a, code)
+            if (rel.prerelease) {
+                if (beta == null || code > beta.code) beta = opt
+            } else {
+                if (stable == null || code > stable.code) stable = opt
+            }
+        }
+    }
+    return stable to beta
+}
+
 data class ReleaseAsset(
     val name: String,
     val url: String,
@@ -641,6 +679,210 @@ fun Root(
         RecoveryStateCache.ensureLoadedOnStartup(context, scope)
     }
 
+    // ---- Self-update менеджера из релизов ----
+    var managerUpdateOffer by remember { mutableStateOf<Pair<ManagerUpdateOption?, ManagerUpdateOption?>?>(null) }
+    var updatePromptedForCode by remember { mutableStateOf(0) }
+    var pendingManagerApk by remember { mutableStateOf<ManagerUpdateOption?>(null) }
+    var managerInstallFile by remember { mutableStateOf<Pair<File, Int>?>(null) }
+
+    fun beginManagerUpdate(opt: ManagerUpdateOption) {
+        managerUpdateOffer = null
+        val key = "${opt.release.tag}/${opt.asset.name}"
+        val done = ReleasesSessionCache.downloads[key] as? AssetDl.Done
+        if (done != null && File(done.path).isFile) {
+            managerInstallFile = File(done.path) to opt.code
+        } else {
+            pendingManagerApk = opt
+            ReleasesSessionCache.startDownload(context, opt.release, opt.asset)
+        }
+    }
+
+    fun installManagerApkNative(file: File) {
+        runCatching {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", file,
+            )
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                )
+            }
+            context.startActivity(intent)
+        }
+    }
+
+    val releasesSnapshot = ReleasesSessionCache.releases
+    LaunchedEffect(releasesSnapshot) {
+        val (stable, beta) = findManagerUpdates(releasesSnapshot)
+        val best = maxOf(stable?.code ?: 0, beta?.code ?: 0)
+        val current = BuildConfig.VERSION_CODE
+        val refused = docsPrefs.refusedManagerUpdateCode
+        if (best > current && best > refused && updatePromptedForCode != best) {
+            updatePromptedForCode = best
+            managerUpdateOffer = stable to beta
+        }
+    }
+
+    pendingManagerApk?.let { opt ->
+        val key = "${opt.release.tag}/${opt.asset.name}"
+        val st = ReleasesSessionCache.downloads[key]
+        LaunchedEffect(st) {
+            if (st is AssetDl.Done && File(st.path).isFile) {
+                pendingManagerApk = null
+                managerInstallFile = File(st.path) to opt.code
+            } else if (st is AssetDl.Error) {
+                pendingManagerApk = null
+            }
+        }
+    }
+
+    managerUpdateOffer?.let { (stable, beta) ->
+        val best = maxOf(stable?.code ?: 0, beta?.code ?: 0)
+        val stableTxt = stable?.code?.toString() ?: "—"
+        val betaTxt = beta?.code?.toString() ?: "—"
+        AlertDialog(
+            onDismissRequest = {
+                docsPrefs.refusedManagerUpdateCode = best
+                managerUpdateOffer = null
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            shape = RoundedCornerShape(22.dp),
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            title = {
+                Text(
+                    text = stringResource(R.string.update_manager_title),
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text(
+                        text = stringResource(
+                            R.string.update_manager_text,
+                            BuildConfig.VERSION_CODE,
+                            stringResource(R.string.update_manager_channels, stableTxt, betaTxt),
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    stable?.let { opt ->
+                        Button(
+                            onClick = { beginManagerUpdate(opt) },
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.edgeOutline()),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.update_channel_stable, opt.code))
+                        }
+                    }
+                    beta?.let { opt ->
+                        FilledTonalButton(
+                            onClick = { beginManagerUpdate(opt) },
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.update_channel_beta, opt.code))
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            docsPrefs.refusedManagerUpdateCode = best
+                            managerUpdateOffer = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            },
+            confirmButton = {},
+        )
+    }
+
+    managerInstallFile?.let { (file, code) ->
+        AlertDialog(
+            onDismissRequest = { managerInstallFile = null },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            shape = RoundedCornerShape(22.dp),
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            title = {
+                Text(
+                    text = stringResource(R.string.update_install_title),
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(R.string.update_install_text, code),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Button(
+                        onClick = {
+                            managerInstallFile = null
+                            scope.launch(Dispatchers.IO) {
+                                val hasRoot = RootInstallerEngine.checkRootAccess()
+                                if (!hasRoot) {
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.update_no_root),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                    return@launch
+                                }
+                                val err = RootInstallerEngine.installApkViaRoot(context, file)
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(
+                                        context,
+                                        if (err == null) {
+                                            context.getString(R.string.update_install_root_ok)
+                                        } else {
+                                            context.getString(R.string.update_install_root_fail, err)
+                                        },
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.edgeOutline()),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.update_install_root))
+                    }
+                    FilledTonalButton(
+                        onClick = {
+                            managerInstallFile = null
+                            installManagerApkNative(file)
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.update_install_system))
+                    }
+                    TextButton(
+                        onClick = { managerInstallFile = null },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            },
+            confirmButton = {},
+        )
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = contentBg,
@@ -701,6 +943,15 @@ fun Root(
                             focusReleaseTag = focusReleaseTag,
                             onFocusReleaseHandled = { focusReleaseTag = null },
                             onInstallAsset = { rel, asset ->
+                                if (isManagerApkAsset(asset.name)) {
+                                    val key = "${rel.tag}/${asset.name}"
+                                    val done = ReleasesSessionCache.downloads[key] as? AssetDl.Done
+                                        ?: return@ReleasesScreen
+                                    val file = File(done.path)
+                                    if (!file.isFile) return@ReleasesScreen
+                                    managerInstallFile = file to (managerApkVersionCode(asset.name) ?: 0)
+                                    return@ReleasesScreen
+                                }
                                 val key = "${rel.tag}/${asset.name}"
                                 val done = ReleasesSessionCache.downloads[key] as? AssetDl.Done
                                     ?: return@ReleasesScreen
@@ -2410,6 +2661,7 @@ private fun ReleaseAssetsSection(
                             onCopyToDownloads = { onCopyToDownloads(asset) },
                             onInstall = { onInstallAsset(asset) },
                             onCancelDownload = { onCancelDownload(asset) },
+                            isManagerApk = isManagerApkAsset(asset.name),
                         )
                     }
                 }
@@ -2427,6 +2679,7 @@ internal fun AssetRow(
     onCopyToDownloads: () -> Unit,
     onInstall: () -> Unit,
     onCancelDownload: () -> Unit = {},
+    isManagerApk: Boolean = false,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -2585,6 +2838,27 @@ internal fun AssetRow(
                 }
             }
             is AssetDl.Done -> {
+                if (isManagerApk) {
+                    Button(
+                        onClick = onInstall,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primaryContainer.edgeOutline()),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.action_install_update),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                        )
+                    }
+                } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
@@ -2638,6 +2912,7 @@ internal fun AssetRow(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                }
                 }
             }
         }
