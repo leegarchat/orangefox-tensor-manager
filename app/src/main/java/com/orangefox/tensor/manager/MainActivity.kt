@@ -673,7 +673,19 @@ fun Root(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+    val docsPrefs = remember(context) { AppPrefs(context) }
+    var tab by rememberSaveable {
+        mutableStateOf(
+            try {
+                Tab.valueOf(docsPrefs.lastTab)
+            } catch (_: IllegalArgumentException) {
+                Tab.Releases
+            }
+        )
+    }
+    LaunchedEffect(tab) {
+        docsPrefs.lastTab = tab.name
+    }
     var externalLaunchRequest by remember { mutableStateOf<InstallTargetRequest?>(null) }
     var installBusy by remember { mutableStateOf(false) }
     // The installer submenu lives in Root so it survives tab switches.
@@ -683,7 +695,6 @@ fun Root(
     val homeNav = remember { HomeNavState() }
     val homeChips = remember { HomeChipsState() }
     val homeChipsBarH = 60.dp
-    val docsPrefs = remember(context) { AppPrefs(context) }
     val blurState = rememberGraphicsLayerRecordingState()
     val density = LocalDensity.current
     val statusTop = remember(density) {
@@ -2071,6 +2082,10 @@ fun ReleasesScreen(
             }
         }
     }
+    // Latest stable = first non-prerelease in API order (newest first) of the FULL list.
+    val latestStableTag = remember(releases) {
+        releases?.firstOrNull { !it.prerelease }?.tag
+    }
 
     var viewportTopInRoot by remember { mutableFloatStateOf(0f) }
     var viewportBottomInRoot by remember { mutableFloatStateOf(0f) }
@@ -2086,17 +2101,21 @@ fun ReleasesScreen(
     LaunchedEffect(focusReleaseTag, releases) {
         val tag = focusReleaseTag ?: return@LaunchedEffect
         val all = releases ?: return@LaunchedEffect
-        val target = all.firstOrNull { it.tag == tag } ?: return@LaunchedEffect
-        if (target.prerelease && filterMode == ReleaseFilterMode.Main) {
-            filterMode = ReleaseFilterMode.All
-            prefs.releaseFilterMode = ReleaseFilterMode.All.ordinal
-        }
-        expanded[tag] = true
-        val visibleList = when (filterMode) {
+        all.firstOrNull { it.tag == tag } ?: return@LaunchedEffect
+        val visibleAtEntry = when (filterMode) {
             ReleaseFilterMode.Main -> all.filter { !it.prerelease }
             ReleaseFilterMode.Prerelease -> all.filter { it.prerelease }
             ReleaseFilterMode.All -> all
         }
+        // Target is not visible under the current filter (either direction) — fall back to All.
+        val visibleList = if (visibleAtEntry.none { it.tag == tag }) {
+            filterMode = ReleaseFilterMode.All
+            prefs.releaseFilterMode = ReleaseFilterMode.All.ordinal
+            all
+        } else {
+            visibleAtEntry
+        }
+        expanded[tag] = true
         val idx = visibleList.indexOfFirst { it.tag == tag }
         if (idx >= 0) {
             listState.animateScrollToItem((idx + 1).coerceAtLeast(0))
@@ -2266,6 +2285,7 @@ fun ReleasesScreen(
                             info = r,
                             isExpanded = isExp,
                             isAssetsHighlighted = highlightedReleaseTag == r.tag,
+                            isLatestStable = r.tag == latestStableTag,
                             showBannerInCollapsed = showBannerInCollapsed,
                             collapseH2AsSpoilers = collapseH2AsSpoilers,
                             cacheImages = cacheImages,
@@ -2459,6 +2479,7 @@ private fun ReleaseCard(
     info: ReleaseInfo,
     isExpanded: Boolean,
     isAssetsHighlighted: Boolean,
+    isLatestStable: Boolean = false,
     showBannerInCollapsed: Boolean,
     collapseH2AsSpoilers: Boolean,
     cacheImages: Boolean,
@@ -2532,6 +2553,7 @@ private fun ReleaseCard(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     ReleaseHeaderRow(
                         info = info,
+                        isLatestStable = isLatestStable,
                         isExpanded = isExpanded,
                         modifier = Modifier
                             .clickable {
@@ -2671,6 +2693,7 @@ private fun ReleaseCard(
                         }
                         ReleaseHeaderRow(
                             info = info,
+                            isLatestStable = isLatestStable,
                             isExpanded = false,
                             modifier = Modifier
                                 .sharedBounds(
@@ -2688,6 +2711,7 @@ private fun ReleaseCard(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         ReleaseHeaderRow(
                             info = info,
+                            isLatestStable = isLatestStable,
                             isExpanded = true,
                             modifier = Modifier
                                 .sharedBounds(
@@ -2804,6 +2828,7 @@ private fun ReleaseHeaderRow(
     info: ReleaseInfo,
     isExpanded: Boolean,
     modifier: Modifier = Modifier,
+    isLatestStable: Boolean = false,
 ) {
     val rotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
@@ -2837,12 +2862,55 @@ private fun ReleaseHeaderRow(
                     )
                 }
             }
+            if (isLatestStable || info.prerelease) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (isLatestStable) {
+                        ReleaseStatusBadge(
+                            text = stringResource(R.string.badge_latest),
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                    }
+                    if (info.prerelease) {
+                        ReleaseStatusBadge(
+                            text = stringResource(R.string.badge_prerelease),
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
+                }
+            }
         }
         Icon(
             painter = painterResource(R.drawable.ic_chevron),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.rotate(rotation),
+        )
+    }
+}
+
+@Composable
+private fun ReleaseStatusBadge(
+    text: String,
+    containerColor: androidx.compose.ui.graphics.Color,
+    contentColor: androidx.compose.ui.graphics.Color,
+) {
+    Surface(
+        color = containerColor,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.border(1.dp, containerColor.edgeOutline(), RoundedCornerShape(8.dp)),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = contentColor,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
         )
     }
 }

@@ -50,6 +50,8 @@
     <string name="filter_releases_main">Основні</string>
     <string name="filter_releases_prerelease">Пререлізи</string>
     <string name="filter_releases_all">Усі</string>
+    <string name="badge_latest">Актуальний</string>
+    <string name="badge_prerelease">Пререліз</string>
     <string name="notify_releases_none">Немає</string>
     <string name="notify_releases_all">Усі</string>
     <string name="notify_releases_main">Основні</string>

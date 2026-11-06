@@ -36,8 +36,12 @@ class AppPrefs(context: Context) {
         set(v) { sp.edit().putLong(KEY_DOCS_REFRESH, v).apply() }
 
     var releaseFilterMode: Int
-        get() = sp.getInt(KEY_RELEASE_FILTER, ReleaseFilterMode.Main.ordinal)
+        get() = sp.getInt(KEY_RELEASE_FILTER, ReleaseFilterMode.All.ordinal)
         set(v) { sp.edit().putInt(KEY_RELEASE_FILTER, v).apply() }
+
+    var lastTab: String
+        get() = sp.getString(KEY_LAST_TAB, DEFAULT_TAB) ?: DEFAULT_TAB
+        set(v) { sp.edit().putString(KEY_LAST_TAB, v).apply() }
 
     var releaseNotifyMode: Int
         get() = sp.getInt(KEY_RELEASE_NOTIFY, ReleaseNotifyMode.None.ordinal)
@@ -65,6 +69,8 @@ class AppPrefs(context: Context) {
 
     companion object {
         const val DEFAULT_BLUR = 40f
+        const val DEFAULT_TAB = "Releases"
+        private const val KEY_LAST_TAB = "last_tab"
         private const val KEY_BLUR = "blur_radius"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_BANNER_COLLAPSED = "show_banner_collapsed"
@@ -98,7 +104,7 @@ enum class ReleaseFilterMode(@StringRes val labelRes: Int) {
     All(R.string.filter_releases_all);
 
     companion object {
-        fun fromOrdinal(o: Int): ReleaseFilterMode = entries.getOrElse(o) { Main }
+        fun fromOrdinal(o: Int): ReleaseFilterMode = entries.getOrElse(o) { All }
     }
 }
 

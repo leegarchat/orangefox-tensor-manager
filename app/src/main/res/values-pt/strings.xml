@@ -50,6 +50,8 @@
     <string name="filter_releases_main">Principais</string>
     <string name="filter_releases_prerelease">Pré-lançamentos</string>
     <string name="filter_releases_all">Todos</string>
+    <string name="badge_latest">Atual</string>
+    <string name="badge_prerelease">Pré-lançamento</string>
     <string name="notify_releases_none">Nenhum</string>
     <string name="notify_releases_all">Todos</string>
     <string name="notify_releases_main">Principais</string>

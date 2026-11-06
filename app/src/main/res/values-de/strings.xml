@@ -50,6 +50,8 @@
     <string name="filter_releases_main">Stabile</string>
     <string name="filter_releases_prerelease">Vorabversionen</string>
     <string name="filter_releases_all">Alle</string>
+    <string name="badge_latest">Aktuell</string>
+    <string name="badge_prerelease">Vorabversion</string>
     <string name="notify_releases_none">Keine</string>
     <string name="notify_releases_all">Alle</string>
     <string name="notify_releases_main">Stabile</string>

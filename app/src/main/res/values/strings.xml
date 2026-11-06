@@ -49,6 +49,8 @@
     <string name="filter_releases_main">Main</string>
     <string name="filter_releases_prerelease">Prereleases</string>
     <string name="filter_releases_all">All</string>
+    <string name="badge_latest">Latest</string>
+    <string name="badge_prerelease">Pre-release</string>
     <string name="notify_releases_none">None</string>
     <string name="notify_releases_all">All</string>
     <string name="notify_releases_main">Main</string>
