@@ -338,6 +338,7 @@ fun ExpandableGroupCard(
     content: @Composable () -> Unit,
 ) {
     var expanded by rememberSaveable(keyTag) { mutableStateOf(false) }
+    val groupHaptics = LocalHapticFeedback.current
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
         animationSpec = tween(220, easing = FastOutSlowInEasing),
@@ -358,7 +359,10 @@ fun ExpandableGroupCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { expanded = !expanded }
+                    .clickable {
+                        groupHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                        expanded = !expanded
+                    }
                     .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

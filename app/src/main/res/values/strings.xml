@@ -169,7 +169,7 @@
     <string name="recovery_status_title">Installed Recovery</string>
     <string name="recovery_slot_label">Slot %1$s</string>
     <string name="recovery_slot_active_badge">ACTIVE</string>
-    <string name="recovery_type_my_ofox">OrangeFox (LeegarChat build)</string>
+    <string name="recovery_type_my_ofox">OrangeFox (LeeGarChat build)</string>
     <string name="recovery_type_other_ofox">OrangeFox (Unofficial / Other)</string>
     <string name="recovery_type_twrp">TWRP Recovery</string>
     <string name="recovery_type_los">LineageOS Recovery</string>
@@ -209,4 +209,7 @@
     <string name="recovery_base_aosp">AOSP based</string>
     <string name="recovery_base_twrp">TWRP based</string>
     <string name="recovery_running_now">running now</string>
+    <string name="link_tg_channel">@OFRPforTensor</string>
+    <string name="root_missing_title">No root access</string>
+    <string name="root_missing_text">You don\'t have root access, so the manager cannot patch your vendor_boot to install OrangeFox. You can only browse the documentation and download releases.</string>
 </resources>

@@ -67,7 +67,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -186,6 +188,7 @@ private fun resolveUriFileName(context: Context, uri: Uri): String {
 fun RootRequiredDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(22.dp),
         icon = {
             Icon(
                 painter = painterResource(R.drawable.ic_bolt),
@@ -579,6 +582,7 @@ private fun LocalFileInstallCard(
     onCopyToDownloads: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val cardHaptics = LocalHapticFeedback.current
     Card(
         modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(), RoundedCornerShape(20.dp)),
         shape = RoundedCornerShape(20.dp),
@@ -603,6 +607,7 @@ private fun LocalFileInstallCard(
                         Surface(
                             color = badgeContainerColor,
                             shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.border(1.dp, badgeContainerColor.edgeOutline(), RoundedCornerShape(8.dp)),
                         ) {
                             Text(
                                 text = badgeText,
@@ -633,7 +638,11 @@ private fun LocalFileInstallCard(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(CircleShape)
-                        .clickable(onClick = onDelete),
+                        .border(1.dp, MaterialTheme.colorScheme.errorContainer.edgeOutline(), CircleShape)
+                        .clickable {
+                            cardHaptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onDelete()
+                        },
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -798,6 +807,7 @@ private fun BackupRestoreModal(
 
     AlertDialog(
         onDismissRequest = { if (!isFlashing) onDismiss() },
+        shape = RoundedCornerShape(22.dp),
         title = {
             Text(
                 text = stringResource(R.string.restore_backup_title),
@@ -863,7 +873,11 @@ private fun BackupRestoreModal(
         },
         confirmButton = {
             if (runOutcome is InstallRunOutcome.Success) {
-                Button(onClick = onBackupRestored) {
+                Button(
+                    onClick = onBackupRestored,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.edgeOutline()),
+                ) {
                     Text(stringResource(R.string.action_done))
                 }
             } else {
@@ -1168,7 +1182,7 @@ private fun InstallerSubmenuView(
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
                     shape = RoundedCornerShape(20.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.errorContainer.edgeOutline(), RoundedCornerShape(20.dp)),
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -1218,6 +1232,7 @@ private fun InstallerSubmenuView(
                                 OutlinedButton(
                                     onClick = { customVendorBootPicker.launch(arrayOf("*/*")) },
                                     shape = RoundedCornerShape(14.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline()),
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Text(
@@ -1295,7 +1310,7 @@ private fun InstallerSubmenuView(
                         Surface(
                             color = MaterialTheme.colorScheme.errorContainer,
                             shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.errorContainer.edgeOutline(), RoundedCornerShape(20.dp)),
                         ) {
                             Column(
                                 modifier = Modifier.padding(16.dp),
@@ -1407,6 +1422,7 @@ private fun InstallerSubmenuView(
                                 OutlinedButton(
                                     onClick = { customTouchPicker.launch(arrayOf("*/*")) },
                                     shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline()),
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Text(customTouchLgz?.name ?: stringResource(R.string.install_pick_lgz))

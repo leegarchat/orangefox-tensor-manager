@@ -839,7 +839,7 @@ fun InstalledRecoveryStatusCard(
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f),
                     shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.errorContainer.edgeOutline(), RoundedCornerShape(14.dp)),
                 ) {
                     Text(
                         text = stringResource(R.string.recovery_no_root_cached_warn),
@@ -853,7 +853,7 @@ fun InstalledRecoveryStatusCard(
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                     shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.surfaceContainerHighest.edgeOutline(), RoundedCornerShape(14.dp)),
                 ) {
                     Text(
                         text = stringResource(R.string.recovery_no_root_empty),
@@ -907,6 +907,7 @@ fun InstalledRecoveryStatusCard(
                                     Surface(
                                         color = MaterialTheme.colorScheme.primaryContainer,
                                         shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.primaryContainer.edgeOutline(), RoundedCornerShape(6.dp)),
                                     ) {
                                         Text(
                                             text = stringResource(R.string.recovery_slot_active_badge),
@@ -921,6 +922,7 @@ fun InstalledRecoveryStatusCard(
                                     Surface(
                                         color = MaterialTheme.colorScheme.tertiaryContainer,
                                         shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.tertiaryContainer.edgeOutline(), RoundedCornerShape(6.dp)),
                                     ) {
                                         Text(
                                             text = stringResource(R.string.recovery_running_now),

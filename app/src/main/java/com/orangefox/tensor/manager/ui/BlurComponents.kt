@@ -5,9 +5,6 @@ import android.graphics.RenderNode
 import android.graphics.Shader
 import android.os.Build
 import androidx.annotation.RequiresApi
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -264,13 +261,7 @@ fun BottomBlurBar(
                 scaleY = scale
             }
             .clip(shape)
-            .border(width = 1.dp, color = borderColor, shape = shape)
-            .animateContentSize(
-                animationSpec = spring(
-                    stiffness = 380f,
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                )
-            ),
+            .border(width = 1.dp, color = borderColor, shape = shape),
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurRadius > 0.5f) {
             Box(

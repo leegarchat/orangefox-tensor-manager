@@ -679,6 +679,53 @@ fun Root(
         RecoveryStateCache.ensureLoadedOnStartup(context, scope)
     }
 
+    // Одноразовая проверка рута при старте: без рута менеджер не пропатчит vendor_boot.
+    var rootMissingNotice by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!docsPrefs.rootCheckDone) {
+            docsPrefs.rootCheckDone = true
+            if (!RootInstallerEngine.checkRootAccess()) {
+                rootMissingNotice = true
+            }
+        }
+    }
+    if (rootMissingNotice) {
+        AlertDialog(
+            onDismissRequest = { rootMissingNotice = false },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            shape = RoundedCornerShape(22.dp),
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            title = {
+                Text(
+                    text = stringResource(R.string.root_missing_title),
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.root_missing_text),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { rootMissingNotice = false },
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.edgeOutline()),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = stringResource(R.string.action_ok),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+        )
+    }
+
     // ---- Self-update менеджера из релизов ----
     var managerUpdateOffer by remember { mutableStateOf<Pair<ManagerUpdateOption?, ManagerUpdateOption?>?>(null) }
     var updatePromptedForCode by remember { mutableStateOf(0) }
@@ -1671,10 +1718,7 @@ private fun SettingsScreen(
                             title = stringResource(R.string.settings_show_banner_collapsed_title),
                             description = stringResource(R.string.settings_show_banner_collapsed_desc),
                             checked = showBannerInCollapsed,
-                            onCheckedChange = {
-                                haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                onShowBannerInCollapsedChange(it)
-                            },
+                            onCheckedChange = onShowBannerInCollapsedChange,
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 18.dp),
@@ -1684,10 +1728,7 @@ private fun SettingsScreen(
                             title = stringResource(R.string.settings_collapse_h2_title),
                             description = stringResource(R.string.settings_collapse_h2_desc),
                             checked = collapseH2AsSpoilers,
-                            onCheckedChange = {
-                                haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                onCollapseH2AsSpoilersChange(it)
-                            },
+                            onCheckedChange = onCollapseH2AsSpoilersChange,
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 18.dp),
@@ -1697,10 +1738,7 @@ private fun SettingsScreen(
                             title = stringResource(R.string.settings_collapse_h2_home_title),
                             description = stringResource(R.string.settings_collapse_h2_home_desc),
                             checked = collapseH2Home,
-                            onCheckedChange = {
-                                haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                onCollapseH2HomeChange(it)
-                            },
+                            onCheckedChange = onCollapseH2HomeChange,
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 18.dp),
@@ -1766,7 +1804,7 @@ private fun SettingsScreen(
                                 contentPadding = PaddingValues(horizontal = 8.dp),
                             ) {
                                 Text(
-                                    text = "@OFRPforTensor",
+                                    text = stringResource(R.string.link_tg_channel),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     textAlign = TextAlign.Center,
@@ -1943,10 +1981,15 @@ private fun SettingSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
+    val switchHaptics = LocalHapticFeedback.current
+    fun fire(next: Boolean) {
+        switchHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+        onCheckedChange(next)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .clickable { fire(!checked) }
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -1968,7 +2011,7 @@ private fun SettingSwitchRow(
         }
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = { fire(it) },
         )
     }
 }
@@ -2339,10 +2382,14 @@ private fun ReleaseCard(
     onInstallAsset: (ReleaseAsset) -> Unit,
     onCancelDownload: (ReleaseAsset) -> Unit,
 ) {
-    // 1. Фиксированный боковой отступ (8.dp) сохраняет неизменную ширину карточки:
-    // текст Markdown, спойлеры и таблицы измеряются ровно 1 раз и не вызывают покадрового
-    // релейаута текста, обеспечивая плавные 60/120 FPS без просадок до 30 кадров.
-    val horizontalPad = 8.dp
+    // В раскрытом состоянии карточка занимает почти всю ширину экрана (отступ 4.dp),
+    // давая больше места вложенным блокам. Анимация синхронизирована с морфингом радиуса.
+    val horizontalPad by animateDpAsState(
+        targetValue = if (isExpanded) 4.dp else 8.dp,
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "CardHorizontalPad",
+    )
+    val cardHaptics = LocalHapticFeedback.current
     val cornerRadius by animateDpAsState(
         targetValue = if (isExpanded) 18.dp else 22.dp,
         animationSpec = tween(260, easing = FastOutSlowInEasing),
@@ -2360,7 +2407,12 @@ private fun ReleaseCard(
             .padding(horizontal = horizontalPad)
             .onGloballyPositioned { coords ->
                 onCardBoundsChanged(coords.boundsInRoot())
-            },
+            }
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.surfaceContainerLow.edgeOutline(),
+                RoundedCornerShape(cornerRadius),
+            ),
         shape = RoundedCornerShape(cornerRadius),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -2394,8 +2446,13 @@ private fun ReleaseCard(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(onClick = onToggle),
+                            .clickable {
+                                cardHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                onToggle()
+                            },
                     ) {
+                        // Заголовок всегда морфится через sharedBounds (сдвиг), а не кросс-фейд,
+                        // поэтому при раскрытии/сворачивании текст едет по offset, а не гаснет.
                         if (info.bannerUrl != null && showBannerInCollapsed) {
                             NetworkBannerImage(
                                 url = info.bannerUrl,
@@ -2415,18 +2472,12 @@ private fun ReleaseCard(
                             info = info,
                             isExpanded = false,
                             modifier = Modifier
-                                .then(
-                                    if (canMorphBanner) {
-                                        Modifier.sharedBounds(
-                                            sharedContentState = rememberSharedContentState(key = "header_${info.tag}"),
-                                            animatedVisibilityScope = this@AnimatedContent,
-                                            boundsTransform = { _, _ -> morphSpring },
-                                            // RemeasureToBounds полностью исключает зумирование и растяжение шрифта
-                                            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
-                                        )
-                                    } else {
-                                        Modifier
-                                    }
+                                .sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "header_${info.tag}"),
+                                    animatedVisibilityScope = this@AnimatedContent,
+                                    boundsTransform = { _, _ -> morphSpring },
+                                    // RemeasureToBounds полностью исключает зумирование и растяжение шрифта
+                                    resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
                                 )
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
                         )
@@ -2437,19 +2488,16 @@ private fun ReleaseCard(
                             info = info,
                             isExpanded = true,
                             modifier = Modifier
-                                .then(
-                                    if (canMorphBanner) {
-                                        Modifier.sharedBounds(
-                                            sharedContentState = rememberSharedContentState(key = "header_${info.tag}"),
-                                            animatedVisibilityScope = this@AnimatedContent,
-                                            boundsTransform = { _, _ -> morphSpring },
-                                            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
-                                        )
-                                    } else {
-                                        Modifier
-                                    }
+                                .sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "header_${info.tag}"),
+                                    animatedVisibilityScope = this@AnimatedContent,
+                                    boundsTransform = { _, _ -> morphSpring },
+                                    resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
                                 )
-                                .clickable(onClick = onToggle)
+                                .clickable {
+                                    cardHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                    onToggle()
+                                }
                                 .padding(horizontal = 14.dp, vertical = 14.dp),
                         )
                         HorizontalDivider(
@@ -2478,7 +2526,10 @@ private fun ReleaseCard(
                                             }
                                         )
                                         .clip(RoundedCornerShape(14.dp))
-                                        .clickable(onClick = onToggle),
+                                        .clickable {
+                                            cardHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                            onToggle()
+                                        },
                                 )
                             }
 
@@ -2690,6 +2741,7 @@ internal fun AssetRow(
     onCancelDownload: () -> Unit = {},
     isManagerApk: Boolean = false,
 ) {
+    val assetHaptics = LocalHapticFeedback.current
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -2747,7 +2799,11 @@ internal fun AssetRow(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(CircleShape)
-                        .clickable(onClick = onDelete),
+                        .border(1.dp, MaterialTheme.colorScheme.errorContainer.edgeOutline(), CircleShape)
+                        .clickable {
+                            assetHaptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onDelete()
+                        },
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -2815,7 +2871,11 @@ internal fun AssetRow(
                         modifier = Modifier
                             .size(34.dp)
                             .clip(CircleShape)
-                            .clickable(onClick = onCancelDownload),
+                            .border(1.dp, MaterialTheme.colorScheme.errorContainer.edgeOutline(), CircleShape)
+                            .clickable {
+                                assetHaptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onCancelDownload()
+                            },
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
