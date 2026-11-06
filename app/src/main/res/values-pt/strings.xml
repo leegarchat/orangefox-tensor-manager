@@ -44,6 +44,8 @@
     <string name="settings_collapse_h2_desc">Agrupar as seções ## em blocos expansíveis</string>
     <string name="settings_collapse_h2_home_title">Seções ## no início</string>
     <string name="settings_collapse_h2_home_desc">Agrupar as seções (##) do início em blocos expansíveis</string>
+    <string name="settings_cache_images_title">Guardar imagens em cache</string>
+    <string name="settings_cache_images_desc">Manter os banners baixados no disco. Desative para carregar sempre cópias novas</string>
     <string name="md_spoiler_title">Spoiler</string>
     <string name="filter_releases_main">Principais</string>
     <string name="filter_releases_prerelease">Pré-lançamentos</string>
@@ -172,7 +174,6 @@
     <string name="action_wipe_all_files">Apagar todos os arquivos</string>
     <string name="delete_confirm_text">“%1$s” será apagado permanentemente.</string>
     <string name="delete_confirm_title">Apagar este arquivo?</string>
-    <string name="link_tg_channel">@OFRPforTensor</string>
     <string name="recovery_base_aosp">Baseado em AOSP</string>
     <string name="recovery_base_fmt">%1$s · De: %2$s</string>
     <string name="recovery_base_los">Baseado em LOS</string>
@@ -212,4 +213,5 @@
     <string name="wipe_done_toast">Todos os arquivos do app apagados</string>
     <string name="root_missing_title">Sem acesso root</string>
     <string name="root_missing_text">Você não tem acesso root, então o gerenciador não pode modificar seu vendor_boot para instalar o OrangeFox. Você só pode ver a documentação e baixar releases.</string>
+    <!-- Project URLs: single source of truth, identical in all locales, do not translate -->
 </resources>

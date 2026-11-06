@@ -138,7 +138,7 @@ object RootInstallerEngine {
     }
 
     /**
-     * Единый исполнитель root-команд с немедленным закрытием stdin и жёстким таймаутом.
+     * Single root-command executor with immediate stdin close and a hard timeout.
      */
     internal fun runRootCommand(cmd: String, timeoutSec: Long = 120): Pair<Int, String> {
         var proc: Process? = null
@@ -148,7 +148,7 @@ object RootInstallerEngine {
                 .redirectErrorStream(true)
                 .start()
             val p = proc
-            // Закрываем stdin сразу, чтобы ни один бинарник внутри su не ждал ввода
+            // Close stdin immediately so no binary inside su waits for input
             runCatching { p.outputStream.close() }
             val sb = StringBuilder()
             reader = Thread({
@@ -195,9 +195,9 @@ object RootInstallerEngine {
     }
 
     /**
-     * Установка APK менеджера через root: копирует в /data/local/tmp
-     * (системный pm не видит приватный кеш приложения) и ставит `pm install -r`.
-     * Возвращает null при успехе или текст ошибки.
+     * Installs the manager APK via root: copies it to /data/local/tmp
+     * (the system pm cannot see the app's private cache) and runs `pm install -r`.
+     * Returns null on success or an error message.
      */
     suspend fun installApkViaRoot(
         context: Context,
@@ -241,14 +241,14 @@ object RootInstallerEngine {
     private const val DEFAULT_VENDOR_BOOT_PART_SIZE = 67_108_864L // 64 MiB
 
     /**
-     * Дописывает выходной патченный .img нулями (0x00) до точного размера блочного устройства (64 МБ).
+     * Pads the output patched .img with zeros (0x00) up to the exact block-device size (64 MB).
      */
     private fun padImageWithZerosToSize(context: Context, imgFile: File, targetSizeBytes: Long, onLog: (String) -> Unit): Boolean {
         if (!imgFile.isFile || targetSizeBytes <= 0L) return true
         val currentSize = imgFile.length()
         if (currentSize >= targetSizeBytes) return true
 
-        // Выходной файл создан bootsmasher под root — забираем доступ для процесса приложения.
+        // The output file was created by bootsmasher under root — reclaim access for the app process.
         runRootCommand("chmod 666 ${shQuote(imgFile.absolutePath)}")
         return try {
             java.io.RandomAccessFile(imgFile, "rw").use { raf ->
@@ -271,7 +271,7 @@ object RootInstallerEngine {
     }
 
     /**
-     * Проверяет, содержит ли ELF-бинарник текущей сборки подстроку флага (например, "--strip-16k").
+     * Checks whether the current build's ELF binary contains a flag substring (e.g. "--strip-16k").
      */
     private fun binaryContainsFlag(binFile: File, flag: String): Boolean {
         return try {
@@ -316,9 +316,9 @@ object RootInstallerEngine {
     }
 
     /**
-     * Удаляет все файлы приложения: импортированные установщики, бэкапы,
-     * распакованные окружения, кеш загрузок релизов и кеш инспектора.
-     * Настройки (AppPrefs) и кеш документации не трогает.
+     * Deletes all app files: imported installers, backups,
+     * unpacked environments, release download cache, and inspector cache.
+     * Leaves settings (AppPrefs) and the docs cache untouched.
      */
     fun wipeAllAppFiles(context: Context) {
         ReleasesSessionCache.cancelAllDownloads()
@@ -333,6 +333,7 @@ object RootInstallerEngine {
         File(context.filesDir, "installer_work").deleteRecursively()
         File(context.filesDir, "inspector_bin").deleteRecursively()
         File(context.filesDir, "recovery_slot_cache.json").delete()
+        File(context.cacheDir, "images").deleteRecursively()
         context.cacheDir.listFiles()?.forEach { f ->
             val n = f.name
             val low = n.lowercase()
@@ -438,10 +439,10 @@ object RootInstallerEngine {
                 return@withContext Result.success(existing)
             }
 
-            // Удаляем старый общий кэш бинарников (если остался от прошлых версий)
+            // Remove the old shared binary cache (if left over from previous versions)
             File(context.filesDir, "shared_installer_bin").deleteRecursively()
 
-            // Полностью очищаем рабочую директорию перед распаковкой конкретной сборки
+            // Fully clean the work directory before unpacking the specific build
             val rootWorkDir = File(context.filesDir, "installer_work")
             runRootCommand("rm -rf ${shQuote(rootWorkDir.absolutePath)}")
             rootWorkDir.deleteRecursively()
@@ -460,7 +461,7 @@ object RootInstallerEngine {
                     if (entry.isDirectory) return@forEachIndexed
                     val name = entry.name.removePrefix("./")
                     val low = name.lowercase()
-                    // Пропускаем только десктопные бинарники Windows/macOS
+                    // Skip only Windows/macOS desktop binaries
                     if (low.endsWith(".exe") || low.endsWith(".dll") || low.contains("macos") || low.contains("windows")) {
                         return@forEachIndexed
                     }
@@ -479,14 +480,14 @@ object RootInstallerEngine {
                 }
             }
 
-            // Ищем payload (*.lz4) внутри распакованной сборки
+            // Look for the payload (*.lz4) inside the unpacked build
             val finalPayload = workDir.walkTopDown().firstOrNull { f ->
                 f.isFile && f.name.endsWith(".lz4", ignoreCase = true)
             } ?: return@withContext Result.failure(
                 IllegalStateException(context.getString(R.string.unpack_err_no_payload))
             )
 
-            // Ищем bin.lgz внутри текущей сборки
+            // Look for bin.lgz inside the current build
             val binLgzFile = workDir.walkTopDown().firstOrNull { f ->
                 f.isFile && f.name.equals("bin.lgz", ignoreCase = true)
             }
@@ -515,7 +516,7 @@ object RootInstallerEngine {
                 }
             }
 
-            // Ищем бинарник установщика строго внутри распакованной папки ТОЛЬКО ЭТОЙ сборки
+            // Look for the installer binary strictly inside the unpacked folder of THIS build only
             val allFiles = workDir.walkTopDown().filter { it.isFile }.toList()
             val resolvedBin = allFiles.firstOrNull { it.name == "install-small-linux-arm64" }
                 ?: allFiles.firstOrNull { it.name == "install-linux-arm64" }
@@ -527,7 +528,7 @@ object RootInstallerEngine {
                     IllegalStateException(context.getString(R.string.unpack_err_no_binary))
                 )
 
-            // Ищем модуль тача <device>.lgz и папку modules строго внутри текущей сборки
+            // Look for the touch module <device>.lgz and the modules folder strictly inside the current build
             val deviceModule = allFiles.firstOrNull { f ->
                 f.name.equals("$deviceCodename.lgz", ignoreCase = true)
             }
@@ -679,7 +680,7 @@ object RootInstallerEngine {
                     logs = logs,
                 )
             }
-            // Добиваем патченный образ нулями ровно до размера блочного устройства (64 МБ)
+            // Pad the patched image with zeros up to exactly the block-device size (64 MB)
             val targetPadSize = if (partitionSize > 0L) partitionSize else DEFAULT_VENDOR_BOOT_PART_SIZE
             if (!padImageWithZerosToSize(context, outputImg, targetPadSize, ::log)) {
                 return@withContext InstallRunOutcome.Failure(
@@ -733,9 +734,9 @@ object RootInstallerEngine {
     }
 
     /**
-     * Общий атомарный шаг прошивки одного слота:
-     * опциональный бэкап -> проверка размера -> разблокировка ro/rw -> dd с fsync -> потоковая сверка cmp.
-     * Возвращает null при успехе или локализованный текст ошибки.
+     * Shared atomic single-slot flash step:
+     * optional backup -> size check -> ro/rw unlock -> dd with fsync -> streaming cmp verification.
+     * Returns null on success or a localized error message.
      */
     private suspend fun flashAndVerifySlot(
         context: Context,

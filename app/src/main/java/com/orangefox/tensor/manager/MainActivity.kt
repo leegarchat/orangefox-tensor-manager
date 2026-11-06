@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.Manifest
+import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -36,11 +37,13 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -116,6 +119,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onPlaced
@@ -145,6 +149,7 @@ import com.orangefox.tensor.manager.ui.edgeOutline
 import com.orangefox.tensor.manager.ui.GraphicsLayerRecordingState
 import com.orangefox.tensor.manager.ui.MarkdownBody
 import com.orangefox.tensor.manager.ui.NetworkBannerImage
+import com.orangefox.tensor.manager.ui.SessionImageCache
 import com.orangefox.tensor.manager.ui.SettingSlider
 import com.orangefox.tensor.manager.ui.TopBarBlurOverlay
 import com.orangefox.tensor.manager.ui.TopStatusVeil
@@ -165,18 +170,15 @@ import java.io.FileOutputStream
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private const val RELEASES_URL =
-    "https://api.github.com/repos/leegarchat/twrp_device_google_pixels/releases"
-
 internal val sharedHttpClient = OkHttpClient()
 
-/** Менеджер-APK в релизах: orangefox*tensor*manager*{versionCode}*.apk */
+/** Manager APK in releases: orangefox*tensor*manager*{versionCode}*.apk */
 internal fun isManagerApkAsset(name: String): Boolean {
     val low = name.lowercase()
     return low.endsWith(".apk") && "orangefox" in low && "tensor" in low && "manager" in low
 }
 
-/** versionCode — последняя группа цифр в имени файла. */
+/** versionCode is the last digit group in the file name. */
 internal fun managerApkVersionCode(name: String): Int? {
     if (!isManagerApkAsset(name)) return null
     val base = name.substringBeforeLast('.', name)
@@ -189,7 +191,7 @@ data class ManagerUpdateOption(
     val code: Int,
 )
 
-/** Лучший стабильный и лучший бета-кандидат среди ВСЕХ релизов (включая пререлизы). */
+/** Best stable and best beta candidate across ALL releases (including prereleases). */
 internal fun findManagerUpdates(releases: List<ReleaseInfo>?): Pair<ManagerUpdateOption?, ManagerUpdateOption?> {
     if (releases.isNullOrEmpty()) return null to null
     var stable: ManagerUpdateOption? = null
@@ -351,18 +353,26 @@ object ReleasesSessionCache {
         copyLocalFileToDownloads(context, File(done.path), asset.name)
     }
 
-    fun ensureLoaded(scope: CoroutineScope, cacheDir: File) {
+    fun ensureLoaded(scope: CoroutineScope, context: Context, cacheDir: File) {
         if (releases != null || isRefreshing) return
-        refresh(scope, cacheDir)
+        refresh(scope, context, cacheDir)
     }
 
-    fun refresh(scope: CoroutineScope, cacheDir: File) {
+    fun refresh(scope: CoroutineScope, context: Context, cacheDir: File) {
         if (isRefreshing) return
         isRefreshing = true
         listError = null
+        val appContext = context.applicationContext
         scope.launch(Dispatchers.IO) {
             try {
-                val loaded = fetchReleases()
+                // Manual list refresh: wipe the image disk cache,
+                // then everything is re-downloaded from the network exactly once and cached again.
+                com.orangefox.tensor.manager.ui.SessionImageCache.bindDiskCache(
+                    appContext.cacheDir,
+                    AppPrefs(appContext).cacheImages,
+                )
+                com.orangefox.tensor.manager.ui.SessionImageCache.clearDiskSync()
+                val loaded = fetchReleases(appContext)
                 loaded.forEach { rel ->
                     rel.assets.forEach { asset ->
                         val key = "${rel.tag}/${asset.name}"
@@ -388,8 +398,8 @@ object ReleasesSessionCache {
     }
 }
 
-private fun fetchReleases(): List<ReleaseInfo> {
-    Request.Builder().url(RELEASES_URL)
+private fun fetchReleases(context: Context): List<ReleaseInfo> {
+    Request.Builder().url(context.getString(R.string.url_releases_api))
         .header("User-Agent", "PixelOFoxApp")
         .header("Accept", "application/vnd.github+json")
         .build().let { req ->
@@ -403,7 +413,8 @@ private fun fetchReleases(): List<ReleaseInfo> {
                         if (o.optBoolean("draft", false)) continue
                         val tag = o.optString("tag_name", "untagged")
                         val rawBody = o.optString("body")
-                        val (bannerUrl, cleanBody) = extractBannerAndCleanMarkdown(rawBody)
+                        val rawBase = context.getString(R.string.url_github_raw_base)
+                        val (bannerUrl, cleanBody) = extractBannerAndCleanMarkdown(rawBody, rawBase)
                         val assetsJson = o.optJSONArray("assets")
                         val assets = buildList {
                             if (assetsJson != null) {
@@ -538,6 +549,7 @@ class MainActivity : ComponentActivity() {
             var collapseH2AsSpoilers by remember { mutableStateOf(prefs.collapseH2AsSpoilers) }
             var collapseH2Home by remember { mutableStateOf(prefs.collapseH2Home) }
             var releaseNotifyMode by remember { mutableStateOf(ReleaseNotifyMode.fromOrdinal(prefs.releaseNotifyMode)) }
+            var cacheImages by remember { mutableStateOf(prefs.cacheImages) }
             val notifPermLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { }
@@ -568,6 +580,11 @@ class MainActivity : ComponentActivity() {
                     onCollapseH2HomeChange = {
                         collapseH2Home = it
                         prefs.collapseH2Home = it
+                    },
+                    cacheImages = cacheImages,
+                    onCacheImagesChange = {
+                        cacheImages = it
+                        prefs.cacheImages = it
                     },
                     releaseNotifyMode = releaseNotifyMode,
                     onReleaseNotifyModeChange = {
@@ -604,7 +621,7 @@ fun OrangeFoxTheme(
     SideEffect {
         val activity = view.context as? Activity ?: return@SideEffect
         val controller = WindowCompat.getInsetsController(activity.window, view)
-        // Светлая тема -> тёмные иконки статус-бара, тёмная тема -> светлые.
+        // Light theme -> dark status-bar icons, dark theme -> light ones.
         controller.isAppearanceLightStatusBars = !darkTheme
         controller.isAppearanceLightNavigationBars = !darkTheme
     }
@@ -649,6 +666,8 @@ fun Root(
     onCollapseH2AsSpoilersChange: (Boolean) -> Unit,
     collapseH2Home: Boolean,
     onCollapseH2HomeChange: (Boolean) -> Unit,
+    cacheImages: Boolean,
+    onCacheImagesChange: (Boolean) -> Unit,
     releaseNotifyMode: ReleaseNotifyMode,
     onReleaseNotifyModeChange: (ReleaseNotifyMode) -> Unit,
 ) {
@@ -657,7 +676,7 @@ fun Root(
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var externalLaunchRequest by remember { mutableStateOf<InstallTargetRequest?>(null) }
     var installBusy by remember { mutableStateOf(false) }
-    // Подменю установщика живёт в Root, чтобы переживать переключение вкладок.
+    // The installer submenu lives in Root so it survives tab switches.
     var installSubmenuTarget by remember { mutableStateOf<InstallTargetRequest?>(null) }
     var filesEpoch by remember { mutableStateOf(0) }
     var focusReleaseTag by rememberSaveable { mutableStateOf<String?>(null) }
@@ -679,7 +698,7 @@ fun Root(
         RecoveryStateCache.ensureLoadedOnStartup(context, scope)
     }
 
-    // Одноразовая проверка рута при старте: без рута менеджер не пропатчит vendor_boot.
+    // One-time root check at startup: without root the manager cannot patch vendor_boot.
     var rootMissingNotice by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         if (!docsPrefs.rootCheckDone) {
@@ -726,7 +745,7 @@ fun Root(
         )
     }
 
-    // ---- Self-update менеджера из релизов ----
+    // ---- Manager self-update from releases ----
     var managerUpdateOffer by remember { mutableStateOf<Pair<ManagerUpdateOption?, ManagerUpdateOption?>?>(null) }
     var updatePromptedForCode by remember { mutableStateOf(0) }
     var pendingManagerApk by remember { mutableStateOf<ManagerUpdateOption?>(null) }
@@ -988,6 +1007,7 @@ fun Root(
                             topInset = topBarH + 8.dp,
                             chipsBarHeight = homeChipsBarH,
                             collapseH2Home = collapseH2Home,
+                            cacheImages = cacheImages,
                             nav = homeNav,
                             chips = homeChips,
                         )
@@ -996,6 +1016,7 @@ fun Root(
                             floatingFilesState = floatingFilesState,
                             showBannerInCollapsed = showBannerInCollapsed,
                             collapseH2AsSpoilers = collapseH2AsSpoilers,
+                            cacheImages = cacheImages,
                             focusReleaseTag = focusReleaseTag,
                             onFocusReleaseHandled = { focusReleaseTag = null },
                             onInstallAsset = { rel, asset ->
@@ -1050,6 +1071,8 @@ fun Root(
                             onCollapseH2AsSpoilersChange = onCollapseH2AsSpoilersChange,
                             collapseH2Home = collapseH2Home,
                             onCollapseH2HomeChange = onCollapseH2HomeChange,
+                            cacheImages = cacheImages,
+                            onCacheImagesChange = onCacheImagesChange,
                             releaseNotifyMode = releaseNotifyMode,
                             onReleaseNotifyModeChange = onReleaseNotifyModeChange,
                             onWipeAllFiles = {
@@ -1133,9 +1156,9 @@ fun Root(
                         IconButton(
                             onClick = {
                                 if (tab == Tab.Home) {
-                                    DocsSessionCache.refresh(scope, context.cacheDir, docsPrefs, force = true)
+                                    DocsSessionCache.refresh(scope, context, context.cacheDir, docsPrefs, force = true)
                                 } else {
-                                    ReleasesSessionCache.refresh(scope, context.cacheDir)
+                                    ReleasesSessionCache.refresh(scope, context, context.cacheDir)
                                 }
                             },
                         ) {
@@ -1150,7 +1173,7 @@ fun Root(
                 }
             }
 
-            // Фиксированная блюр-полоса чипов Home — продолжение шапки, вне записываемого слоя (цикла нет).
+            // Fixed Home chips blur strip — a header continuation, outside the recorded layer (no loop).
             if (tab == Tab.Home && homeChips.docs.size > 1) {
                 Box(
                     modifier = Modifier
@@ -1183,7 +1206,7 @@ fun Root(
                 }
             }
 
-            // Плавающая блюр-кнопка «К релизам» — сиблинг recordLayer (вне записываемого слоя C, цикла нет!)
+            // Floating "To releases" blur button — a recordLayer sibling (outside recorded layer C, no loop!)
             AnimatedVisibility(
                 visible = tab == Tab.Releases && floatingFilesState.targetRelease != null,
                 enter = fadeIn(tween(180)) + slideInVertically(tween(220)) { it / 2 } + scaleIn(initialScale = 0.92f),
@@ -1275,8 +1298,8 @@ fun Root(
                 }
             }
 
-            // Круглые кнопки Home-навигации: Назад (слева) и Домой (справа),
-            // обе с блюром, обе сиблинги recordLayer (вне записываемого слоя C, цикла нет!)
+            // Round Home navigation buttons: Back (left) and Home (right),
+            // both blurred, both recordLayer siblings (outside recorded layer C, no loop!)
             val homeHaptics = LocalHapticFeedback.current
             AnimatedVisibility(
                 visible = tab == Tab.Home && homeNav.visible && homeNav.canGoBack,
@@ -1387,8 +1410,8 @@ fun Root(
                     }
                 }
 
-                // Концентрический отступ 6.dp со всех сторон:
-                // высота капсулы 46.dp, радиус скругления всегда идеально повторяет внешний контур.
+                // Concentric 6.dp inset on all sides:
+                // capsule height is 46.dp, corner radius always exactly follows the outer contour.
                 Row(
                     modifier = Modifier
                         .padding(6.dp)
@@ -1446,7 +1469,7 @@ fun Root(
 
                         val pillBg by animateColorAsState(
                             targetValue = when {
-                                selected -> MaterialTheme.colorScheme.primaryContainer
+                                selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
                                 isFingerHere -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.75f)
                                 else -> Color.Transparent
                             },
@@ -1537,39 +1560,6 @@ fun Root(
     }
 }
 
-private val XDA_THREADS = listOf(
-    "Pixel 6" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-6.4806927/",
-    "Pixel 6 Pro" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-6-pro.4806929/",
-    "Pixel 6a" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-6a.4806930/",
-    "Pixel 7" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-7.4783086/",
-    "Pixel 7 Pro" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-7-pro.4783087/",
-    "Pixel 7a" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-7a.4783088/",
-    "Pixel 8" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-8.4783089/",
-    "Pixel 8 Pro" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-8-pro.4783091/",
-    "Pixel 8a" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-8a.4783092/",
-    "Pixel 9" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-9.4783093/",
-    "Pixel 9 Pro / Pro XL" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-9-pro-pro-xl.4783094/",
-    "Pixel 9a" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-9a.4783096/",
-    "Pixel Fold" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-fold.4806920/",
-    "Pixel Tablet" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-tablet.4806921/",
-    "Pixel 9 Pro Fold" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-9-pro-fold.4806922/",
-    "Pixel 10" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-10.4806924/",
-    "Pixel 10 Pro / Pro XL" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-10-pro-pro-xl.4806925/",
-    "Pixel 10a" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-10a.4806923/",
-    "Pixel 10 Pro Fold" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-10-pro-fold.4806926/",
-    "Pixel 11" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-11.4806931/",
-    "Pixel 11 Pro / Pro XL" to "https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-11-pro-pro-xl.4806932/",
-)
-
-private val TELEGRAM_FAMILY_CHATS = listOf(
-    "G1 · Pixel 6" to "https://t.me/OFRP_tensor_g1",
-    "G2 · Pixel 7" to "https://t.me/OFRP_tensor_g2",
-    "G3 · Pixel 8" to "https://t.me/OFRP_tensor_g3",
-    "G4 · Pixel 9" to "https://t.me/OFRP_tensor_g4",
-    "G5 · Pixel 10" to "https://t.me/OFRP_tensor_g5",
-    "G6 · Pixel 11" to "https://t.me/OFRP_tensor_g6",
-)
-
 @Composable
 private fun SettingsScreen(
     topInset: Dp,
@@ -1583,6 +1573,8 @@ private fun SettingsScreen(
     onCollapseH2AsSpoilersChange: (Boolean) -> Unit,
     collapseH2Home: Boolean,
     onCollapseH2HomeChange: (Boolean) -> Unit,
+    cacheImages: Boolean,
+    onCacheImagesChange: (Boolean) -> Unit,
     releaseNotifyMode: ReleaseNotifyMode,
     onReleaseNotifyModeChange: (ReleaseNotifyMode) -> Unit,
     onWipeAllFiles: () -> Unit = {},
@@ -1591,6 +1583,15 @@ private fun SettingsScreen(
     val listState = rememberLazyListState()
     val haptics = LocalHapticFeedback.current
     var showWipeConfirm by remember { mutableStateOf(false) }
+    // Link lists live in resources (string-array); order and names stay unchanged.
+    val xdaThreads = remember(context) {
+        context.resources.getStringArray(R.array.xda_thread_titles)
+            .zip(context.resources.getStringArray(R.array.xda_thread_urls))
+    }
+    val tgFamilyChats = remember(context) {
+        context.resources.getStringArray(R.array.tg_family_chat_titles)
+            .zip(context.resources.getStringArray(R.array.tg_family_chat_urls))
+    }
 
     if (showWipeConfirm) {
         AlertDialog(
@@ -1744,6 +1745,16 @@ private fun SettingsScreen(
                             modifier = Modifier.padding(horizontal = 18.dp),
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                         )
+                        SettingSwitchRow(
+                            title = stringResource(R.string.settings_cache_images_title),
+                            description = stringResource(R.string.settings_cache_images_desc),
+                            checked = cacheImages,
+                            onCheckedChange = onCacheImagesChange,
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 18.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                        )
                         Column(
                             modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1775,6 +1786,8 @@ private fun SettingsScreen(
 
         item {
             val uriHandler = LocalUriHandler.current
+            val tgChannelUrl = stringResource(R.string.url_tg_channel)
+            val tgDiscussionUrl = stringResource(R.string.url_tg_discussion)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = stringResource(R.string.settings_section_links),
@@ -1797,7 +1810,7 @@ private fun SettingsScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             FilledTonalButton(
-                                onClick = { uriHandler.openUri("https://t.me/OFRPforTensor") },
+                                onClick = { uriHandler.openUri(tgChannelUrl) },
                                 shape = RoundedCornerShape(14.dp),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
                                 modifier = Modifier.weight(1f).height(48.dp),
@@ -1811,7 +1824,7 @@ private fun SettingsScreen(
                                 )
                             }
                             FilledTonalButton(
-                                onClick = { uriHandler.openUri("https://t.me/OFRPforTensorDiscussion") },
+                                onClick = { uriHandler.openUri(tgDiscussionUrl) },
                                 shape = RoundedCornerShape(14.dp),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
                                 modifier = Modifier.weight(1f).height(48.dp),
@@ -1832,7 +1845,7 @@ private fun SettingsScreen(
                             keyTag = "settings_tg_family_spoiler",
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                TELEGRAM_FAMILY_CHATS.forEach { (title, url) ->
+                                tgFamilyChats.forEach { (title, url) ->
                                     Surface(
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                                         shape = RoundedCornerShape(12.dp),
@@ -1864,12 +1877,12 @@ private fun SettingsScreen(
                         }
 
                         ExpandableGroupCard(
-                            title = stringResource(R.string.link_xda_threads_title, XDA_THREADS.size),
+                            title = stringResource(R.string.link_xda_threads_title, xdaThreads.size),
                             subtitle = stringResource(R.string.link_xda_threads_subtitle),
                             keyTag = "settings_xda_threads_spoiler",
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                XDA_THREADS.forEach { (deviceTitle, url) ->
+                                xdaThreads.forEach { (deviceTitle, url) ->
                                     Surface(
                                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                                         shape = RoundedCornerShape(12.dp),
@@ -1927,6 +1940,7 @@ private fun SettingsScreen(
 
         item {
             val uriHandler = LocalUriHandler.current
+            val donateUrl = stringResource(R.string.url_donate)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = stringResource(R.string.settings_section_support),
@@ -1956,7 +1970,7 @@ private fun SettingsScreen(
                         )
                         Button(
                             onClick = {
-                                uriHandler.openUri("https://github.com/leegarchat/twrp_device_google_pixels/tree/R12_16#readme")
+                                uriHandler.openUri(donateUrl)
                             },
                             shape = RoundedCornerShape(16.dp),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.edgeOutline()),
@@ -2028,6 +2042,7 @@ fun ReleasesScreen(
     floatingFilesState: FloatingFilesButtonState,
     showBannerInCollapsed: Boolean,
     collapseH2AsSpoilers: Boolean,
+    cacheImages: Boolean,
     focusReleaseTag: String?,
     onFocusReleaseHandled: () -> Unit,
     onInstallAsset: (ReleaseInfo, ReleaseAsset) -> Unit,
@@ -2065,7 +2080,7 @@ fun ReleasesScreen(
     var highlightedReleaseTag by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        ReleasesSessionCache.ensureLoaded(scope, cacheDir)
+        ReleasesSessionCache.ensureLoaded(scope, context, cacheDir)
     }
 
     LaunchedEffect(focusReleaseTag, releases) {
@@ -2210,7 +2225,7 @@ fun ReleasesScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(stringResource(R.string.releases_error, listError))
-                        Button(onClick = { ReleasesSessionCache.refresh(scope, cacheDir) }) {
+                        Button(onClick = { ReleasesSessionCache.refresh(scope, context, cacheDir) }) {
                             Text(stringResource(R.string.action_retry))
                         }
                     }
@@ -2253,6 +2268,7 @@ fun ReleasesScreen(
                             isAssetsHighlighted = highlightedReleaseTag == r.tag,
                             showBannerInCollapsed = showBannerInCollapsed,
                             collapseH2AsSpoilers = collapseH2AsSpoilers,
+                            cacheImages = cacheImages,
                             onToggle = {
                                 haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                                 val next = !isExp
@@ -2365,6 +2381,79 @@ internal fun ConfirmDeleteDialog(
     )
 }
 
+/**
+ * Subtle accent of the expanded release header based on the banner.
+ * Average-color sampling is manual (no Palette), off the UI thread,
+ * the result is cached by release tag. The bitmap is reused from
+ * the session cache [SessionImageCache] — no repeated network loads.
+ */
+private object ReleaseHeaderAccentCache {
+    val accents = java.util.concurrent.ConcurrentHashMap<String, Color>()
+}
+
+private fun sampleBannerAccentColor(bmp: Bitmap): Color? {
+    val w = bmp.width
+    val h = bmp.height
+    if (w <= 0 || h <= 0) return null
+    // At most ~1024 samples: stride from area, no heavy computation in composition.
+    val step = maxOf(1, kotlin.math.sqrt((w * h) / 1024.0).toInt())
+    var rSum = 0L
+    var gSum = 0L
+    var bSum = 0L
+    var count = 0L
+    var y = 0
+    while (y < h) {
+        var x = 0
+        while (x < w) {
+            val px = bmp.getPixel(x, y)
+            if ((px ushr 24) >= 128) {
+                rSum += ((px shr 16) and 0xFF).toLong()
+                gSum += ((px shr 8) and 0xFF).toLong()
+                bSum += (px and 0xFF).toLong()
+                count++
+            }
+            x += step
+        }
+        y += step
+    }
+    if (count == 0L) return null
+    val hsv = FloatArray(3)
+    android.graphics.Color.RGBToHSV(
+        (rSum / count).toInt(),
+        (gSum / count).toInt(),
+        (bSum / count).toInt(),
+        hsv,
+    )
+    // Slightly boost saturation (gray banners still hint a tone),
+    // normalize brightness so the veil reads well in both light and dark themes.
+    hsv[1] = (hsv[1] * 1.25f).coerceIn(0f, 0.65f)
+    hsv[2] = hsv[2].coerceIn(0.35f, 0.9f)
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}
+
+@Composable
+private fun rememberReleaseBannerAccent(tag: String, bannerUrl: String?, cacheImages: Boolean): Color? {
+    var accent by remember(tag) { mutableStateOf(ReleaseHeaderAccentCache.accents[tag]) }
+    val context = LocalContext.current
+    val rawBase = stringResource(R.string.url_github_raw_base)
+    LaunchedEffect(tag, bannerUrl, rawBase, cacheImages) {
+        SessionImageCache.bindDiskCache(context.cacheDir, cacheImages)
+        if (accent != null || bannerUrl == null) return@LaunchedEffect
+        if (accent != null || bannerUrl == null) return@LaunchedEffect
+        val bmp = withContext(Dispatchers.IO) {
+            SessionImageCache.getImmediate(bannerUrl, rawBase) ?: SessionImageCache.loadOrAwait(bannerUrl, rawBase)
+        }
+        if (bmp != null) {
+            val sampled = withContext(Dispatchers.Default) { sampleBannerAccentColor(bmp) }
+            if (sampled != null) {
+                ReleaseHeaderAccentCache.accents[tag] = sampled
+                accent = sampled
+            }
+        }
+    }
+    return accent
+}
+
 @Composable
 private fun ReleaseCard(
     info: ReleaseInfo,
@@ -2372,6 +2461,7 @@ private fun ReleaseCard(
     isAssetsHighlighted: Boolean,
     showBannerInCollapsed: Boolean,
     collapseH2AsSpoilers: Boolean,
+    cacheImages: Boolean,
     onToggle: () -> Unit,
     onCardBoundsChanged: (Rect) -> Unit,
     onAnchorBoundsChanged: (Rect) -> Unit,
@@ -2382,8 +2472,8 @@ private fun ReleaseCard(
     onInstallAsset: (ReleaseAsset) -> Unit,
     onCancelDownload: (ReleaseAsset) -> Unit,
 ) {
-    // В раскрытом состоянии карточка занимает почти всю ширину экрана (отступ 4.dp),
-    // давая больше места вложенным блокам. Анимация синхронизирована с морфингом радиуса.
+    // In the expanded state the card takes almost the full screen width (4.dp margin),
+    // giving nested blocks more room. The animation is synced with the radius morph.
     val horizontalPad by animateDpAsState(
         targetValue = if (isExpanded) 4.dp else 8.dp,
         animationSpec = tween(260, easing = FastOutSlowInEasing),
@@ -2394,6 +2484,21 @@ private fun ReleaseCard(
         targetValue = if (isExpanded) 18.dp else 22.dp,
         animationSpec = tween(260, easing = FastOutSlowInEasing),
         label = "CardCornerRadius",
+    )
+    // Subtle veil of the expanded banner-based header. Text does not fight the background:
+    // the accent is applied with low alpha over surfaceContainerLow and reads well in both themes.
+    // Without a banner — a delicate primaryContainer fallback of the same strength.
+    val cardBaseColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val bannerAccent = rememberReleaseBannerAccent(tag = info.tag, bannerUrl = info.bannerUrl, cacheImages = cacheImages)
+    val expandedHeaderTarget = if (bannerAccent != null) {
+        bannerAccent.copy(alpha = 0.13f).compositeOver(cardBaseColor)
+    } else {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.16f).compositeOver(cardBaseColor)
+    }
+    val headerAccentBg by animateColorAsState(
+        targetValue = if (isExpanded) expandedHeaderTarget else cardBaseColor,
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "ReleaseHeaderAccent",
     )
 
     val morphSpring = spring<Rect>(
@@ -2419,6 +2524,105 @@ private fun ReleaseCard(
         ),
     ) {
         SharedTransitionLayout {
+            // Banner and header swap places ONLY when the banner is shown in the collapsed card.
+            // Without a banner the header is static above AnimatedContent: no sharedBounds
+            // and no text cross-fade — only the body animates (divider + content).
+            val canMorphBanner = info.bannerUrl != null && showBannerInCollapsed
+            if (!canMorphBanner) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ReleaseHeaderRow(
+                        info = info,
+                        isExpanded = isExpanded,
+                        modifier = Modifier
+                            .clickable {
+                                cardHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                onToggle()
+                            }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                    )
+                    AnimatedContent(
+                        targetState = isExpanded,
+                        transitionSpec = {
+                            (expandVertically(
+                                animationSpec = tween(240, easing = FastOutSlowInEasing)
+                            ) + fadeIn(
+                                animationSpec = tween(180, easing = FastOutSlowInEasing)
+                            )) togetherWith (shrinkVertically(
+                                animationSpec = tween(200, easing = FastOutSlowInEasing)
+                            ) + fadeOut(
+                                animationSpec = tween(140, easing = FastOutSlowInEasing)
+                            )) using SizeTransform(
+                                clip = true,
+                                sizeAnimationSpec = { _, _ ->
+                                    spring(
+                                        stiffness = Spring.StiffnessMediumLow,
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                    )
+                                }
+                            )
+                        },
+                        label = "ReleaseCardBody_${info.tag}",
+                    ) { expandedState ->
+                        if (expandedState) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                )
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    if (info.bannerUrl != null) {
+                                        NetworkBannerImage(
+                                            url = info.bannerUrl,
+                                            cacheImagesEnabled = cacheImages,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(14.dp))
+                                                .clickable {
+                                                    cardHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                                    onToggle()
+                                                },
+                                        )
+                                    }
+
+                                    OpenGitHubReleaseButton(tag = info.tag)
+
+                                    if (info.cleanBody.isNotBlank()) {
+                                        MarkdownBody(
+                                            md = info.cleanBody,
+                                            collapseH2Sections = collapseH2AsSpoilers,
+                                            cacheImagesEnabled = cacheImages,
+                                        )
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .onGloballyPositioned { coords ->
+                                                onAnchorBoundsChanged(coords.boundsInRoot())
+                                            },
+                                    ) {
+                                        ReleaseAssetsSection(
+                                            info = info,
+                                            isHighlighted = isAssetsHighlighted,
+                                            downloads = downloads,
+                                            onDownload = onDownload,
+                                            onDeleteAsset = onDeleteAsset,
+                                            onCopyToDownloads = onCopyToDownloads,
+                                            onInstallAsset = onInstallAsset,
+                                            onCancelDownload = onCancelDownload,
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Box(modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            } else {
             AnimatedContent(
                 targetState = isExpanded,
                 transitionSpec = {
@@ -2438,10 +2642,6 @@ private fun ReleaseCard(
                 },
                 label = "ReleaseCardMorph_${info.tag}",
             ) { expandedState ->
-                // Баннер и заголовок меняются местами ТОЛЬКО если баннер показан в закрытой карточке.
-                // Если баннер отключен — заголовок уже находится вверху и не должен искажаться sharedBounds!
-                val canMorphBanner = info.bannerUrl != null && showBannerInCollapsed
-
                 if (!expandedState) {
                     Column(
                         modifier = Modifier
@@ -2451,11 +2651,12 @@ private fun ReleaseCard(
                                 onToggle()
                             },
                     ) {
-                        // Заголовок всегда морфится через sharedBounds (сдвиг), а не кросс-фейд,
-                        // поэтому при раскрытии/сворачивании текст едет по offset, а не гаснет.
+                        // The header always morphs via sharedBounds (shift), not cross-fade,
+                        // so on expand/collapse the text travels by offset instead of fading.
                         if (info.bannerUrl != null && showBannerInCollapsed) {
                             NetworkBannerImage(
                                 url = info.bannerUrl,
+                                cacheImagesEnabled = cacheImages,
                                 modifier = Modifier
                                     .sharedBounds(
                                         sharedContentState = rememberSharedContentState(key = "banner_${info.tag}"),
@@ -2476,9 +2677,10 @@ private fun ReleaseCard(
                                     sharedContentState = rememberSharedContentState(key = "header_${info.tag}"),
                                     animatedVisibilityScope = this@AnimatedContent,
                                     boundsTransform = { _, _ -> morphSpring },
-                                    // RemeasureToBounds полностью исключает зумирование и растяжение шрифта
+                                    // RemeasureToBounds fully eliminates zooming and font stretching
                                     resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
                                 )
+                                .background(headerAccentBg)
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
                         )
                     }
@@ -2494,6 +2696,7 @@ private fun ReleaseCard(
                                     boundsTransform = { _, _ -> morphSpring },
                                     resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
                                 )
+                                .background(headerAccentBg)
                                 .clickable {
                                     cardHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                                     onToggle()
@@ -2512,6 +2715,7 @@ private fun ReleaseCard(
                             if (info.bannerUrl != null) {
                                 NetworkBannerImage(
                                     url = info.bannerUrl,
+                                    cacheImagesEnabled = cacheImages,
                                     modifier = Modifier
                                         .then(
                                             if (canMorphBanner) {
@@ -2539,6 +2743,7 @@ private fun ReleaseCard(
                                 MarkdownBody(
                                     md = info.cleanBody,
                                     collapseH2Sections = collapseH2AsSpoilers,
+                                    cacheImagesEnabled = cacheImages,
                                 )
                             }
 
@@ -2564,6 +2769,7 @@ private fun ReleaseCard(
                     }
                 }
             }
+            }
         }
     }
 }
@@ -2571,9 +2777,10 @@ private fun ReleaseCard(
 @Composable
 private fun OpenGitHubReleaseButton(tag: String) {
     val uriHandler = LocalUriHandler.current
+    val tagBase = stringResource(R.string.url_release_tag_base)
     FilledTonalButton(
         onClick = {
-            uriHandler.openUri("https://github.com/leegarchat/twrp_device_google_pixels/releases/tag/$tag")
+            uriHandler.openUri(tagBase + tag)
         },
         shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),

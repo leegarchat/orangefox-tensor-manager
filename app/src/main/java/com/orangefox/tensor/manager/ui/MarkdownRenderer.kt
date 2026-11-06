@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -75,27 +76,95 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import java.io.File
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 
 /**
- * Сессионный кэш изображений в оперативной памяти с дедупликацией параллельных запросов.
- * Если один и тот же URL баннера встречается в нескольких релизах, сетевой запрос
- * выполняется ровно 1 раз за всю сессию работы приложения.
+ * In-memory session image cache with parallel-request deduplication.
+ * When the same banner URL appears in several releases, the network request
+ * runs exactly once per app session.
+ *
+ * Read order: memory → disk → network. The disk layer is the `images`
+ * subfolder in [appCacheDir] (file key is sha256(url), bytes only, no metadata).
+ * With [diskCacheEnabled] off, disk is neither read nor written:
+ * images live only in the current session's memory.
  */
 object SessionImageCache {
+    private const val DISK_SUBDIR = "images"
     private val memoryCache = object : LruCache<String, Bitmap>(48 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
     }
     private val inFlight = ConcurrentHashMap<String, CompletableDeferred<Bitmap?>>()
 
-    fun getImmediate(rawUrl: String): Bitmap? {
-        val url = normalizeGitHubImageUrl(rawUrl)
+    @Volatile
+    var diskCacheEnabled: Boolean = true
+
+    @Volatile
+    private var diskBaseDir: File? = null
+
+    /** Binds the disk cache to [appCacheDir] and enables/disables it. Safe to call from the UI thread. */
+    fun bindDiskCache(appCacheDir: File, enabled: Boolean) {
+        diskBaseDir = appCacheDir
+        diskCacheEnabled = enabled
+    }
+
+    private fun diskFileFor(url: String): File? {
+        val base = diskBaseDir ?: return null
+        val hash = MessageDigest.getInstance("SHA-256")
+            .digest(url.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        return File(File(base, DISK_SUBDIR), hash)
+    }
+
+    private fun readDiskBitmap(url: String): Bitmap? {
+        return try {
+            val file = diskFileFor(url) ?: return null
+            if (!file.isFile || file.length() == 0L) return null
+            val bytes = file.readBytes()
+            if (bytes.isEmpty()) return null
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun writeDiskBytes(url: String, bytes: ByteArray) {
+        try {
+            val file = diskFileFor(url) ?: return
+            file.parentFile?.mkdirs()
+            val tmp = File(file.parentFile, "${file.name}.part")
+            tmp.writeBytes(bytes)
+            if (!tmp.renameTo(file)) {
+                tmp.copyTo(file, overwrite = true)
+                tmp.delete()
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Deletes all image disk-cache files. Call only from Dispatchers.IO. */
+    fun clearDiskSync() {
+        val base = diskBaseDir ?: return
+        try {
+            File(base, DISK_SUBDIR).listFiles()?.forEach { it.delete() }
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Deletes all image disk-cache files (safe from any thread). */
+    suspend fun clearDiskCache() = withContext(Dispatchers.IO) {
+        clearDiskSync()
+    }
+
+    fun getImmediate(rawUrl: String, rawBase: String): Bitmap? {
+        val url = normalizeGitHubImageUrl(rawUrl, rawBase)
         return memoryCache.get(url)
     }
 
-    suspend fun loadOrAwait(rawUrl: String): Bitmap? {
-        val url = normalizeGitHubImageUrl(rawUrl)
+    suspend fun loadOrAwait(rawUrl: String, rawBase: String): Bitmap? {
+        val url = normalizeGitHubImageUrl(rawUrl, rawBase)
         memoryCache.get(url)?.let { return it }
 
         val deferred = CompletableDeferred<Bitmap?>()
@@ -106,19 +175,28 @@ object SessionImageCache {
 
         return try {
             val bmp = withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
-                try {
+                val useDisk = diskCacheEnabled
+                if (useDisk) {
+                    readDiskBitmap(url)?.let { return@withContext it }
+                }
+                val bytes: ByteArray? = try {
                     val req = Request.Builder()
                         .url(url)
                         .header("User-Agent", "PixelOFoxApp")
                         .build()
                     com.orangefox.tensor.manager.sharedHttpClient.newCall(req).execute().use { resp ->
                         if (!resp.isSuccessful) return@use null
-                        val bytes = resp.body?.bytes() ?: return@use null
-                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        resp.body?.bytes()
                     }
                 } catch (_: Exception) {
                     null
                 }
+                if (bytes == null || bytes.isEmpty()) return@withContext null
+                val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                if (decoded != null && useDisk) {
+                    writeDiskBytes(url, bytes)
+                }
+                decoded
             }
             if (bmp != null) {
                 memoryCache.put(url, bmp)
@@ -135,12 +213,15 @@ object SessionImageCache {
 }
 
 /**
- * Преобразует ссылки вида:
+ * Converts links of the form:
  * https://github.com/<owner>/<repo>/blob/<branch>/<path>
- * в прямую ссылку на изображение:
+ * into a direct image link:
  * https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<path>
+ *
+ * The raw-content host base comes from resources (url_github_raw_base),
+ * assembly stays in code since owner/repo/path are dynamic.
  */
-fun normalizeGitHubImageUrl(url: String): String {
+fun normalizeGitHubImageUrl(url: String, rawBase: String): String {
     val trimmed = url.trim().replace("&amp;", "&")
     val blobRegex = Regex("""^https?://github\.com/([^/]+)/([^/]+)/(?:blob|raw)/([^?#]+)(?:\?.*)?$""", RegexOption.IGNORE_CASE)
     val match = blobRegex.find(trimmed)
@@ -148,10 +229,25 @@ fun normalizeGitHubImageUrl(url: String): String {
         val owner = match.groupValues[1]
         val repo = match.groupValues[2]
         val branchAndPath = match.groupValues[3]
-        "https://raw.githubusercontent.com/$owner/$repo/$branchAndPath"
+        "$rawBase$owner/$repo/$branchAndPath"
     } else {
         trimmed
     }
+}
+
+/** Checks the http/https scheme without hardcoding URL literals (scheme != resource address). */
+internal fun isWebUrl(text: String): Boolean {
+    val scheme = text.substringBefore(':', missingDelimiterValue = "").lowercase()
+    return scheme == "http" || scheme == "https"
+}
+
+/** Same for a position inside a string (inline parsing), without a scheme literal in code. */
+internal fun isWebSchemeAt(text: String, index: Int): Boolean {
+    if (index < 0 || index + 7 > text.length) return false
+    if (!text.regionMatches(index, "http", 0, 4, ignoreCase = true)) return false
+    var p = index + 4
+    if (p < text.length && (text[p] == 's' || text[p] == 'S')) p++
+    return p + 2 < text.length && text[p] == ':' && text[p + 1] == '/' && text[p + 2] == '/'
 }
 
 private val leadingHtmlImgRegex = Regex(
@@ -176,27 +272,27 @@ private val inlineMdImgRegex = Regex(
 )
 
 /**
- * Извлекает ссылку на баннер из начала описания релиза (поддерживает <img width="..." src="..." />,
- * Markdown-картинки и ссылки с /blob/) и возвращает очищенный Markdown.
+ * Extracts the banner link from the start of a release description (supports <img width="..." src="..." />,
+ * Markdown images and /blob/ links) and returns the cleaned Markdown.
  */
-fun extractBannerAndCleanMarkdown(rawMd: String): Pair<String?, String> {
+fun extractBannerAndCleanMarkdown(rawMd: String, rawBase: String): Pair<String?, String> {
     val trimmedStart = rawMd.trimStart()
     if (trimmedStart.isEmpty()) return null to rawMd
 
     leadingHtmlImgRegex.find(trimmedStart)?.let { m ->
         val rawUrl = m.groupValues[1]
         val clean = trimmedStart.substring(m.range.last + 1).trimStart('\r', '\n', ' ')
-        return normalizeGitHubImageUrl(rawUrl) to clean
+        return normalizeGitHubImageUrl(rawUrl, rawBase) to clean
     }
     leadingLinkedMdImgRegex.find(trimmedStart)?.let { m ->
         val rawUrl = m.groupValues[1]
         val clean = trimmedStart.substring(m.range.last + 1).trimStart('\r', '\n', ' ')
-        return normalizeGitHubImageUrl(rawUrl) to clean
+        return normalizeGitHubImageUrl(rawUrl, rawBase) to clean
     }
     leadingMdImgRegex.find(trimmedStart)?.let { m ->
         val rawUrl = m.groupValues[1]
         val clean = trimmedStart.substring(m.range.last + 1).trimStart('\r', '\n', ' ')
-        return normalizeGitHubImageUrl(rawUrl) to clean
+        return normalizeGitHubImageUrl(rawUrl, rawBase) to clean
     }
 
     return null to rawMd
@@ -207,17 +303,21 @@ fun NetworkBannerImage(
     url: String,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
+    cacheImagesEnabled: Boolean = true,
 ) {
-    val normalizedUrl = remember(url) { normalizeGitHubImageUrl(url) }
+    val context = LocalContext.current
+    val rawBase = stringResource(R.string.url_github_raw_base)
+    val normalizedUrl = remember(url, rawBase) { normalizeGitHubImageUrl(url, rawBase) }
     var bitmap by remember(normalizedUrl) {
-        mutableStateOf(SessionImageCache.getImmediate(normalizedUrl))
+        mutableStateOf(SessionImageCache.getImmediate(normalizedUrl, rawBase))
     }
     var failed by remember(normalizedUrl) { mutableStateOf(false) }
 
-    LaunchedEffect(normalizedUrl) {
+    LaunchedEffect(normalizedUrl, rawBase, cacheImagesEnabled) {
+        SessionImageCache.bindDiskCache(context.cacheDir, cacheImagesEnabled)
         if (bitmap != null) return@LaunchedEffect
         failed = false
-        val loaded = SessionImageCache.loadOrAwait(normalizedUrl)
+        val loaded = SessionImageCache.loadOrAwait(normalizedUrl, rawBase)
         if (loaded != null) {
             bitmap = loaded
         } else {
@@ -254,8 +354,8 @@ fun NetworkBannerImage(
 }
 
 /**
- * Результат резолва ссылки из markdown: внешняя (открыть в браузере)
- * или внутренняя (открыть документ по id внутри приложения).
+ * Markdown link resolution result: external (open in browser)
+ * or internal (open the document by id inside the app).
  */
 sealed interface DocLink {
     data class External(val url: String) : DocLink
@@ -287,6 +387,7 @@ private sealed interface MdBlock {
 private fun parseMarkdownBlocks(
     md: String,
     defaultSpoilerTitle: String,
+    rawBase: String,
     collapseH2Sections: Boolean = true,
 ): List<MdBlock> {
     val lines = md.replace("\r\n", "\n").lines()
@@ -302,7 +403,7 @@ private fun parseMarkdownBlocks(
             continue
         }
 
-        // 0. Секция ## как раскрывающийся спойлер до следующего ## (или # ) или конца текста
+        // 0. ## section as an expandable spoiler until the next ## (or # ) or end of text
         if (collapseH2Sections && trimmed.startsWith("## ") && !trimmed.startsWith("###")) {
             val sectionTitle = trimmed.removePrefix("## ").trim()
             i++
@@ -326,13 +427,14 @@ private fun parseMarkdownBlocks(
             val children = parseMarkdownBlocks(
                 md = sectionLines.joinToString("\n"),
                 defaultSpoilerTitle = defaultSpoilerTitle,
+                rawBase = rawBase,
                 collapseH2Sections = false,
             )
             blocks.add(MdBlock.SectionSpoiler(title = sectionTitle, children = children))
             continue
         }
 
-        // 1. HTML <details><summary>...</summary>...</details> или :::spoiler
+        // 1. HTML <details><summary>...</summary>...</details> or :::spoiler
         if (trimmed.startsWith("<details", ignoreCase = true) || trimmed.startsWith(":::spoiler", ignoreCase = true)) {
             val isHtml = trimmed.startsWith("<details", ignoreCase = true)
             var summary = defaultSpoilerTitle
@@ -378,13 +480,13 @@ private fun parseMarkdownBlocks(
             blocks.add(
                 MdBlock.Spoiler(
                     summary = summary,
-                    children = parseMarkdownBlocks(bodyLines.joinToString("\n"), defaultSpoilerTitle, collapseH2Sections = false),
+                    children = parseMarkdownBlocks(bodyLines.joinToString("\n"), defaultSpoilerTitle, rawBase, collapseH2Sections = false),
                 )
             )
             continue
         }
 
-        // 2. Блок кода ```
+        // 2. Code block ```
         if (trimmed.startsWith("```")) {
             val lang = trimmed.removePrefix("```").trim()
             val codeLines = mutableListOf<String>()
@@ -398,14 +500,14 @@ private fun parseMarkdownBlocks(
             continue
         }
 
-        // 3. Разделитель
+        // 3. Divider
         if (trimmed == "---" || trimmed == "***" || trimmed == "___") {
             blocks.add(MdBlock.Divider)
             i++
             continue
         }
 
-        // 4. Заголовки H1..H6
+        // 4. Headings H1..H6
         val headingMatch = Regex("""^(#{1,6})\s+(.*)$""").find(trimmed)
         if (headingMatch != null) {
             blocks.add(
@@ -418,18 +520,18 @@ private fun parseMarkdownBlocks(
             continue
         }
 
-        // 5. Картинка отдельной строкой (Markdown или HTML <img>)
+        // 5. Image on its own line (Markdown or HTML <img>)
         val imgMd = inlineMdImgRegex.find(trimmed)
         val imgHtml = inlineHtmlImgRegex.find(trimmed)
         if (imgMd != null || imgHtml != null) {
             val url = imgMd?.groupValues?.get(2) ?: imgHtml!!.groupValues[1]
             val alt = imgMd?.groupValues?.get(1) ?: ""
-            blocks.add(MdBlock.ImageBlock(alt, normalizeGitHubImageUrl(url)))
+            blocks.add(MdBlock.ImageBlock(alt, normalizeGitHubImageUrl(url, rawBase)))
             i++
             continue
         }
 
-        // 6. Таблица GFM
+        // 6. GFM table
         if (trimmed.contains("|") && i + 1 < lines.size && isTableDelimiterLine(lines[i + 1].trim())) {
             val headers = splitTableCells(trimmed)
             val alignments = parseTableAlignments(lines[i + 1].trim(), headers.size)
@@ -443,7 +545,7 @@ private fun parseMarkdownBlocks(
             continue
         }
 
-        // 7. Цитата или GFM Alert (> [!NOTE], > [!WARNING] и т.д.)
+        // 7. Quote or GFM Alert (> [!NOTE], > [!WARNING], etc.)
         if (trimmed.startsWith(">")) {
             val quoteLines = mutableListOf<String>()
             while (i < lines.size && lines[i].trim().startsWith(">")) {
@@ -462,13 +564,13 @@ private fun parseMarkdownBlocks(
             blocks.add(
                 MdBlock.Quote(
                     alertType = alertType,
-                    children = parseMarkdownBlocks(quoteLines.joinToString("\n"), defaultSpoilerTitle, collapseH2Sections = false),
+                    children = parseMarkdownBlocks(quoteLines.joinToString("\n"), defaultSpoilerTitle, rawBase, collapseH2Sections = false),
                 )
             )
             continue
         }
 
-        // 8. Элементы списков и чекбоксы
+        // 8. List items and checkboxes
         val listMatch = Regex("""^(\s*)([-*+]|\d+[.)])\s+(.*)$""").find(raw)
         if (listMatch != null) {
             val indent = listMatch.groupValues[1].length / 2
@@ -483,7 +585,7 @@ private fun parseMarkdownBlocks(
             continue
         }
 
-        // 9. Обычный параграф
+        // 9. Plain paragraph
         val paraLines = mutableListOf(trimmed)
         i++
         while (i < lines.size) {
@@ -550,10 +652,12 @@ fun MarkdownBody(
     modifier: Modifier = Modifier,
     docLinkResolver: ((String) -> DocLink)? = null,
     onDocLinkClick: ((String) -> Unit)? = null,
+    cacheImagesEnabled: Boolean = true,
 ) {
     val defaultSpoilerTitle = stringResource(R.string.md_spoiler_title)
-    val blocks = remember(md, defaultSpoilerTitle, collapseH2Sections) {
-        parseMarkdownBlocks(md, defaultSpoilerTitle, collapseH2Sections = collapseH2Sections)
+    val rawBase = stringResource(R.string.url_github_raw_base)
+    val blocks = remember(md, defaultSpoilerTitle, rawBase, collapseH2Sections) {
+        parseMarkdownBlocks(md, defaultSpoilerTitle, rawBase, collapseH2Sections = collapseH2Sections)
     }
 
     Column(
@@ -561,7 +665,7 @@ fun MarkdownBody(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         blocks.forEach { block ->
-            RenderMdBlock(block, docLinkResolver, onDocLinkClick)
+            RenderMdBlock(block, docLinkResolver, onDocLinkClick, cacheImagesEnabled)
         }
     }
 }
@@ -571,6 +675,7 @@ private fun RenderMdBlock(
     block: MdBlock,
     docLinkResolver: ((String) -> DocLink)? = null,
     onDocLinkClick: ((String) -> Unit)? = null,
+    cacheImagesEnabled: Boolean = true,
 ) {
     when (block) {
         is MdBlock.Divider -> HorizontalDivider(
@@ -657,7 +762,7 @@ private fun RenderMdBlock(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                             )
                             block.children.forEach { child ->
-                                RenderMdBlock(child, docLinkResolver, onDocLinkClick)
+                                RenderMdBlock(child, docLinkResolver, onDocLinkClick, cacheImagesEnabled)
                             }
                         }
                     }
@@ -750,7 +855,7 @@ private fun RenderMdBlock(
                         )
                     }
                     block.children.forEach { child ->
-                        RenderMdBlock(child, docLinkResolver, onDocLinkClick)
+                        RenderMdBlock(child, docLinkResolver, onDocLinkClick, cacheImagesEnabled)
                     }
                 }
             }
@@ -935,7 +1040,7 @@ private fun RenderMdBlock(
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                             )
                             block.children.forEach { child ->
-                                RenderMdBlock(child, docLinkResolver, onDocLinkClick)
+                                RenderMdBlock(child, docLinkResolver, onDocLinkClick, cacheImagesEnabled)
                             }
                         }
                     }
@@ -947,6 +1052,7 @@ private fun RenderMdBlock(
                 url = block.url,
                 contentScale = ContentScale.FillWidth,
                 modifier = Modifier.clip(RoundedCornerShape(12.dp)),
+                cacheImagesEnabled = cacheImagesEnabled,
             )
         }
     }
@@ -1119,8 +1225,7 @@ private fun buildInlineAnnotatedString(
                         i++
                     }
                 }
-                text.startsWith("http://", i, ignoreCase = true) ||
-                    text.startsWith("https://", i, ignoreCase = true) -> {
+                isWebSchemeAt(text, i) -> {
                     val m = bareUrlRegex.find(text.substring(i))
                     if (m != null) {
                         val url = m.value.trimEnd('.', ',', ';', ':')

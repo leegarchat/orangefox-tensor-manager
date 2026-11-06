@@ -27,6 +27,10 @@ class AppPrefs(context: Context) {
         get() = sp.getBoolean(KEY_COLLAPSE_H2_HOME, true)
         set(v) { sp.edit().putBoolean(KEY_COLLAPSE_H2_HOME, v).apply() }
 
+    var cacheImages: Boolean
+        get() = sp.getBoolean(KEY_CACHE_IMAGES, true)
+        set(v) { sp.edit().putBoolean(KEY_CACHE_IMAGES, v).apply() }
+
     var docsLastRefresh: Long
         get() = sp.getLong(KEY_DOCS_REFRESH, 0L)
         set(v) { sp.edit().putLong(KEY_DOCS_REFRESH, v).apply() }
@@ -66,6 +70,7 @@ class AppPrefs(context: Context) {
         private const val KEY_BANNER_COLLAPSED = "show_banner_collapsed"
         private const val KEY_COLLAPSE_H2 = "collapse_h2_spoilers"
         private const val KEY_COLLAPSE_H2_HOME = "collapse_h2_home"
+        private const val KEY_CACHE_IMAGES = "cache_images"
         private const val KEY_DOCS_REFRESH = "docs_last_refresh"
         private const val KEY_RELEASE_FILTER = "release_filter_mode"
         private const val KEY_RELEASE_NOTIFY = "release_notify_mode"

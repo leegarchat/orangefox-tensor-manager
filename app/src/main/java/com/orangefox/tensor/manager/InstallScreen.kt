@@ -250,7 +250,7 @@ fun InstallScreen(
     }
 
     LaunchedEffect(filesEpoch) {
-        ReleasesSessionCache.ensureLoaded(scope, context.cacheDir)
+        ReleasesSessionCache.ensureLoaded(scope, context, context.cacheDir)
         refreshLocalLists()
     }
 

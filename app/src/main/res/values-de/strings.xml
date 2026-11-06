@@ -44,6 +44,8 @@
     <string name="settings_collapse_h2_desc">##-Abschnitte in aufklappbare Blöcke gruppieren</string>
     <string name="settings_collapse_h2_home_title">##-Abschnitte auf der Startseite</string>
     <string name="settings_collapse_h2_home_desc">##-Abschnitte der Startseite in aufklappbare Blöcke gruppieren</string>
+    <string name="settings_cache_images_title">Bilder zwischenspeichern</string>
+    <string name="settings_cache_images_desc">Heruntergeladene Banner auf dem Speicher behalten. Zum Laden stets frischer Kopien deaktivieren</string>
     <string name="md_spoiler_title">Spoiler</string>
     <string name="filter_releases_main">Stabile</string>
     <string name="filter_releases_prerelease">Vorabversionen</string>
@@ -172,7 +174,6 @@
     <string name="action_wipe_all_files">Alle Dateien löschen</string>
     <string name="delete_confirm_text">„%1$s“ wird endgültig gelöscht.</string>
     <string name="delete_confirm_title">Diese Datei löschen?</string>
-    <string name="link_tg_channel">@OFRPforTensor</string>
     <string name="recovery_base_aosp">AOSP-basiert</string>
     <string name="recovery_base_fmt">%1$s · Von: %2$s</string>
     <string name="recovery_base_los">LOS-basiert</string>
@@ -212,4 +213,5 @@
     <string name="wipe_done_toast">Alle App-Dateien gelöscht</string>
     <string name="root_missing_title">Kein Root-Zugriff</string>
     <string name="root_missing_text">Du hast keinen Root-Zugriff, daher kann der Manager dein vendor_boot nicht für die OrangeFox-Installation patchen. Du kannst nur die Dokumentation lesen und Releases herunterladen.</string>
+    <!-- Project URLs: single source of truth, identical in all locales, do not translate -->
 </resources>

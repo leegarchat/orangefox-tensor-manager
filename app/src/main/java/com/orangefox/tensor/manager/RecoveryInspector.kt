@@ -94,9 +94,9 @@ data class SlotRecoveryInfo(
 )
 
 /**
- * Продвинутый детект исходной прошивки по пропсам vendor_boot.
- * Порядок важен: сначала именованные кастомы, потом generic-правила.
- * Возвращает (имя ROM, версия ROM).
+ * Advanced detection of the source firmware from vendor_boot props.
+ * Order matters: named customs first, then generic rules.
+ * Returns (ROM name, ROM version).
  */
 internal fun identifyRom(props: Map<String, String>): Pair<String, String> {
     fun hasPrefix(prefix: String): Boolean =
@@ -137,7 +137,7 @@ internal fun identifyRom(props: Map<String, String>): Pair<String, String> {
         return "LineageOS" to lineageVersion
     }
     if ((props["ro.build.host"] ?: "") == "r-0123456789abcdef-0123") {
-        // Эвристика: GrapheneOS анонимизирует хост сборки; маркеров в пропсах не оставляет.
+        // Heuristic: GrapheneOS anonymizes the build host; it leaves no markers in props.
         return "GrapheneOS" to ""
     }
     val lineageMarkers = hasPrefix("ro.lineage.") ||
@@ -206,7 +206,7 @@ object RecoveryStateCache {
                         }
                     }
 
-                    // Одним вызовом su проверяем root и сразу считаем sha256sum для обоих слотов
+                    // Check root and compute sha256sum for both slots in a single su call
                     val (rc, probeOut) = RootInstallerEngine.runRootCommand(
                         "id && sha256sum /dev/block/by-name/vendor_boot_a /dev/block/by-name/vendor_boot_b 2>/dev/null",
                         timeoutSec = 30,
@@ -258,7 +258,7 @@ object RecoveryStateCache {
         }
     }
 
-    /** Строгое совпадение: fingerprint часто спуфят, требуем три ключа. */
+    /** Strict match: fingerprint is often spoofed, so all three keys are required. */
     fun matchesLiveSystem(info: SlotRecoveryInfo): Boolean {
         return info.buildFingerprint.isNotBlank() &&
             info.buildIncremental.isNotBlank() &&
@@ -370,7 +370,7 @@ object RecoveryStateCache {
         try {
             val imgFile = File(workDir, "vendor_boot.img")
             val mbPath = shQuote(magiskboot.absolutePath)
-            // В один вызов su снимаем образ и распаковываем его через magiskboot
+            // Dump the image and unpack it via magiskboot in a single su call
             val (unpackRc, _) = runSu(
                 "dd if=$blockPath of=${shQuote(imgFile.absolutePath)} bs=1048576 && " +
                     "cd ${shQuote(workDir.absolutePath)} && " +
@@ -423,7 +423,7 @@ object RecoveryStateCache {
                     .map { it.trim().split(Regex("\\s+")).lastOrNull()?.removePrefix("./") ?: "" }
                     .filter { it.isNotEmpty() }
 
-                // 1. Декодер lgz (сначала из рамдиска для старых билдов, иначе комплектный)
+                // 1. lgz decoder (first from the ramdisk for old builds, otherwise the bundled one)
                 var activeLgzBin: File? = null
                 val lgzCandidates = (entries.filter {
                     it.endsWith("/lgz") || it == "lgz" || it.contains("lgz-lean")
@@ -441,9 +441,9 @@ object RecoveryStateCache {
                 }
                 if (activeLgzBin == null) activeLgzBin = bundledLgz
 
-                // 2. prop.default: один вызов extract+chmod, гейт только isFile+length
-                // (magiskboot врёт rc=0 даже для отсутствующих записей — rc не проверяем).
-                // Сначала настоящий prop.default, симлинк default.prop пропускаем.
+                // 2. prop.default: single extract+chmod call, gated only on isFile+length
+                // (magiskboot falsely reports rc=0 even for missing entries — rc is not checked).
+                // Real prop.default first, skip the default.prop symlink.
                 if (propText.isEmpty()) {
                     val propCandidates = (entries.filter {
                         it == "prop.default" || it.endsWith("/prop.default")
@@ -486,8 +486,8 @@ object RecoveryStateCache {
                     }
                 }
 
-                // 3. twrp напрямую: один вызов extract+chmod, гейт isFile+length.
-                // UCOMP01-синглы старых билдов распаковываем найденным lgz-декодером.
+                // 3. twrp directly: single extract+chmod call, gated on isFile+length.
+                // UCOMP01 singles from old builds are unpacked with the discovered lgz decoder.
                 if (twrpFile == null) {
                     val twrpCandidates = (entries.filter {
                         it == "system/bin/twrp" || it == "sbin/twrp"
@@ -529,7 +529,7 @@ object RecoveryStateCache {
                     }
                 }
 
-                // 4. Кластер lgz (ТОЛЬКО файлы со словом "cluster", чтобы не перебирать сотни мелких .lgz)
+                // 4. lgz cluster (ONLY files containing the word "cluster", to avoid scanning hundreds of small .lgz files)
                 val clusterEntries = (entries.filter {
                     it.endsWith(".lgz", ignoreCase = true) && it.contains("cluster", ignoreCase = true)
                 } + listOf("lgz_cluster.lgz")).distinct()
@@ -776,7 +776,7 @@ fun InstalledRecoveryStatusCard(
                     )
                 }
 
-                // Две точки индикатора слотов (Слот A / Слот B)
+                // Two slot indicator dots (Slot A / Slot B)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,

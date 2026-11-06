@@ -45,9 +45,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 
 /*
- * Единый общий RenderNode блюра на весь экран: RenderEffect применяется
- * ровно 1 раз за кадр внутри recordLayer, а оверлеи (шапка, нижний бар,
- * кнопка перехода) рисуют готовый размытый узел как маску со сдвигом.
+ * Single shared full-screen blur RenderNode: the RenderEffect is applied
+ * exactly once per frame inside recordLayer, while overlays (header, bottom bar,
+ * navigate button) draw the ready blurred node as a shifted mask.
  */
 
 @Stable
@@ -84,12 +84,12 @@ fun Modifier.recordLayer(
             val bottomFadePx = bottomEdgeFadeHeight.toPx().coerceAtMost(h * 0.25f)
 
             try {
-                // 1. Записываем дерево контента ровно ОДИН раз
+                // 1. Record the content tree exactly ONCE
                 state.graphicsLayer.record(size = IntSize(w, h)) {
                     this@drawWithContent.drawContent()
                 }
 
-                // 2. Запекаем общий блюр-узел S из записанного слоя C
+                // 2. Bake the shared blur node S from the recorded layer C
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurRadius > 0.5f) {
                     val blurNode = state.sharedBlurNode!!
                     blurNode.setPosition(0, 0, w, h)
@@ -136,7 +136,7 @@ fun Modifier.recordLayer(
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            // 3. Рисуем записанный слой C на экран без второго обхода дерева Compose
+            // 3. Draw the recorded layer C to the screen without a second Compose tree traversal
             drawLayer(state.graphicsLayer)
         } else {
             drawContent()
@@ -145,10 +145,10 @@ fun Modifier.recordLayer(
 }
 
 /**
- * Отрисовывает вырез (маску) из уже готового [state.sharedBlurNode].
- * При [scale] != 1 внешняя капсула растёт, а текстура блюра остаётся 1:1 с экраном:
- * применяется обратная матрица 1/s вокруг центра элемента.
- * Не создаёт новых RenderNode и не дублирует RenderEffect!
+ * Renders a cutout (mask) from the already prepared [state.sharedBlurNode].
+ * When [scale] != 1 the outer capsule grows while the blur texture stays 1:1 with the screen:
+ * an inverse 1/s matrix is applied around the element center.
+ * Creates no new RenderNodes and duplicates no RenderEffects!
  */
 @RequiresApi(Build.VERSION_CODES.S)
 private fun Modifier.renderLayerAt(
@@ -165,8 +165,8 @@ private fun Modifier.renderLayerAt(
         val native = canvas.nativeCanvas
         val saveCount = native.save()
         if (kotlin.math.abs(s - 1f) > 0.001f) {
-            // Компенсируем внешний scale(s, s) вокруг центра элемента:
-            // маска капсулы расширяется на s, а текстура блюра остаётся 1:1 с экраном!
+            // Compensate the outer scale(s, s) around the element center:
+            // the capsule mask expands by s while the blur texture stays 1:1 with the screen!
             val centerInRoot = region.center
             native.translate(size.width * 0.5f, size.height * 0.5f)
             native.scale(1f / s, 1f / s)
@@ -180,8 +180,8 @@ private fun Modifier.renderLayerAt(
 }
 
 /**
- * Равномерная матовая вуаль: сохраняет [minVeilAlpha] при высоком блюре для устранения пятнистости
- * и плавно доходит до 1.0f (непрозрачный фон) при снижении радиуса блюра к 0.
+ * Uniform frosted veil: keeps [minVeilAlpha] at high blur to remove blotchiness
+ * and smoothly reaches 1.0f (opaque background) as the blur radius drops to 0.
  */
 private fun frostedVeilAlpha(blurRadius: Float, minVeilAlpha: Float): Float {
     val t = ((20f - blurRadius) / 20f).coerceIn(0f, 1f)
@@ -307,10 +307,10 @@ fun BottomBlurBar(
 }
 
 /**
- * Микроградиент-вуаль у верхней кромки (зона статус-бара).
- * Скрывает нечёткость блюра на краях контента, где нет информации для сэмплирования.
- * Альфа снизу вверх: 0 → 20 → 40 → 100. Цвет = фон контента (тёмный/светлый по теме).
- * Рисуется сиблингом recordLayer, только поверх блюр-оверлея шапки.
+ * Micro-gradient veil at the top edge (status-bar zone).
+ * Hides blur softness at content edges where there is no sampling data.
+ * Alpha bottom-up: 0 → 20 → 40 → 100. Color = content background (dark/light per theme).
+ * Drawn as a recordLayer sibling, only over the header blur overlay.
  */
 @Composable
 fun TopStatusVeil(

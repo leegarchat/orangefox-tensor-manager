@@ -30,7 +30,7 @@ class ReleaseCheckWorker(
         return try {
             val client = sharedHttpClient
             val req = Request.Builder()
-                .url("https://api.github.com/repos/leegarchat/twrp_device_google_pixels/releases")
+                .url(applicationContext.getString(R.string.url_releases_api))
                 .header("User-Agent", "PixelOFoxApp")
                 .header("Accept", "application/vnd.github+json")
                 .build()

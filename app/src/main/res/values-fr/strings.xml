@@ -44,6 +44,8 @@
     <string name="settings_collapse_h2_desc">Regrouper les sections ## en blocs dépliables</string>
     <string name="settings_collapse_h2_home_title">Sections ## sur l’accueil</string>
     <string name="settings_collapse_h2_home_desc">Regrouper les sections (##) de l’accueil en blocs dépliables</string>
+    <string name="settings_cache_images_title">Mettre les images en cache</string>
+    <string name="settings_cache_images_desc">Conserver les bannières téléchargées sur le disque. Désactivez pour toujours charger des copies récentes</string>
     <string name="md_spoiler_title">Spoiler</string>
     <string name="filter_releases_main">Principales</string>
     <string name="filter_releases_prerelease">Préversions</string>
@@ -172,7 +174,6 @@
     <string name="action_wipe_all_files">Supprimer tous les fichiers</string>
     <string name="delete_confirm_text">« %1$s » sera définitivement supprimé.</string>
     <string name="delete_confirm_title">Supprimer ce fichier ?</string>
-    <string name="link_tg_channel">@OFRPforTensor</string>
     <string name="recovery_base_aosp">Basé sur AOSP</string>
     <string name="recovery_base_fmt">%1$s · Source : %2$s</string>
     <string name="recovery_base_los">Basé sur LOS</string>
@@ -212,4 +213,5 @@
     <string name="wipe_done_toast">Tous les fichiers de l’app supprimés</string>
     <string name="root_missing_title">Pas d\'accès root</string>
     <string name="root_missing_text">Tu n\'as pas d\'accès root, le gestionnaire ne peut donc pas patcher ton vendor_boot pour installer OrangeFox. Tu peux uniquement consulter la documentation et télécharger les releases.</string>
+    <!-- Project URLs: single source of truth, identical in all locales, do not translate -->
 </resources>

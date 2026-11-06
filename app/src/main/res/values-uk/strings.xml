@@ -44,6 +44,8 @@
     <string name="settings_collapse_h2_desc">Згортати основні розділи допису (##) у розкривні блоки</string>
     <string name="settings_collapse_h2_home_title">Секції ## на головній</string>
     <string name="settings_collapse_h2_home_desc">Згортати розділи (##) документів головної у розкривні блоки</string>
+    <string name="settings_cache_images_title">Кешувати зображення</string>
+    <string name="settings_cache_images_desc">Зберігати завантажені банери на диску. Вимкніть, щоб завжди завантажувати свіжі копії</string>
     <string name="md_spoiler_title">Спойлер</string>
     <string name="filter_releases_main">Основні</string>
     <string name="filter_releases_prerelease">Пререлізи</string>
@@ -174,7 +176,6 @@
     <string name="action_wipe_all_files">Видалити всі файли</string>
     <string name="delete_confirm_text">«%1$s» буде видалено без можливості відновлення.</string>
     <string name="delete_confirm_title">Видалити цей файл?</string>
-    <string name="link_tg_channel">@OFRPforTensor</string>
     <string name="recovery_base_aosp">На базі AOSP</string>
     <string name="recovery_base_fmt">%1$s · Джерело: %2$s</string>
     <string name="recovery_base_los">На базі LOS</string>
@@ -214,4 +215,5 @@
     <string name="wipe_done_toast">Всі файли застосунку видалено</string>
     <string name="root_missing_title">Немає root-прав</string>
     <string name="root_missing_text">У вас немає root-прав, тому менеджер не зможе пропатчити ваш vendor_boot для встановлення OrangeFox. Ви можете лише переглядати документацію та завантажувати релізи.</string>
+    <!-- Project URLs: single source of truth, identical in all locales, do not translate -->
 </resources>

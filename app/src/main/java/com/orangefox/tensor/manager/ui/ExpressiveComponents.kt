@@ -70,8 +70,8 @@ import androidx.compose.ui.unit.dp
 import com.orangefox.tensor.manager.R
 
 /**
- * Едва заметная микрообводка для объёма (в гармонии с float-барами).
- * Адаптивная: на светлом контейнере темнит, на тёмном — осветляет.
+ * Barely visible micro-outline for depth (in harmony with float bars).
+ * Adaptive: darkens on a light container, lightens on a dark one.
  */
 internal fun Color.edgeOutline(alpha: Float = 0.45f): Color {
     val luminance = 0.2126f * red + 0.7152f * green + 0.0722f * blue

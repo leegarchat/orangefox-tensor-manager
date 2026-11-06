@@ -14,11 +14,10 @@ import org.json.JSONArray
 import java.io.File
 import java.util.Locale
 
-private const val DOCS_OWNER = "leegarchat"
-private const val DOCS_REPO = "twrp_device_google_pixels"
+// Experimenting-docs branch. Full base URLs live in resources
+// (url_docs_raw_base / url_docs_api_base) and are resolved via Context.
+// DOCS_BRANCH must match the branch baked into those URLs.
 private const val DOCS_BRANCH = "R12_16"
-private const val DOCS_RAW_BASE = "https://raw.githubusercontent.com/$DOCS_OWNER/$DOCS_REPO/$DOCS_BRANCH"
-private const val DOCS_API_BASE = "https://api.github.com/repos/$DOCS_OWNER/$DOCS_REPO/contents"
 private const val DOCS_REFRESH_INTERVAL_MS = 24L * 60L * 60L * 1000L
 
 
@@ -28,7 +27,7 @@ data class DocInfo(
     val title: String,
     val rawUrl: String,
     val cacheName: String,
-    /** Базовый URL для резолва относительных картинок внутри файла. */
+    /** Base URL for resolving relative images inside the file. */
     val baseRawDir: String,
     val isMain: Boolean = false,
 )
@@ -50,15 +49,15 @@ object DocsSessionCache {
         return list.firstOrNull { it.id == "README.md" }?.id ?: list.firstOrNull()?.id
     }
 
-    fun ensureLoaded(scope: CoroutineScope, cacheDir: File, prefs: AppPrefs) {
+    fun ensureLoaded(scope: CoroutineScope, context: Context, cacheDir: File, prefs: AppPrefs) {
         if (docs.isNotEmpty() || isRefreshing) return
-        if (loadFromDisk(cacheDir) &&
+        if (loadFromDisk(context, cacheDir) &&
             System.currentTimeMillis() - prefs.docsLastRefresh < DOCS_REFRESH_INTERVAL_MS
         ) return
-        refresh(scope, cacheDir, prefs, force = false)
+        refresh(scope, context, cacheDir, prefs, force = false)
     }
 
-    fun refresh(scope: CoroutineScope, cacheDir: File, prefs: AppPrefs, force: Boolean = false) {
+    fun refresh(scope: CoroutineScope, context: Context, cacheDir: File, prefs: AppPrefs, force: Boolean = false) {
         if (isRefreshing) return
         if (!force && docs.isNotEmpty() &&
             System.currentTimeMillis() - prefs.docsLastRefresh < DOCS_REFRESH_INTERVAL_MS
@@ -67,7 +66,7 @@ object DocsSessionCache {
         listError = null
         scope.launch(Dispatchers.IO) {
             try {
-                val fetched = fetchDocsList()
+                val fetched = fetchDocsList(context)
                 val dir = File(cacheDir, "docs_cache").apply { mkdirs() }
                 val loaded = mutableMapOf<String, String>()
                 fetched.forEach { doc ->
@@ -88,7 +87,7 @@ object DocsSessionCache {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    if (docs.isEmpty() && !loadFromDisk(cacheDir)) {
+                    if (docs.isEmpty() && !loadFromDisk(context, cacheDir)) {
                         listError = e.message ?: "load failed"
                     }
                     isRefreshing = false
@@ -97,7 +96,8 @@ object DocsSessionCache {
         }
     }
 
-    private fun loadFromDisk(cacheDir: File): Boolean {
+    private fun loadFromDisk(context: Context, cacheDir: File): Boolean {
+        val rawBase = context.getString(R.string.url_docs_raw_base)
         val dir = File(cacheDir, "docs_cache")
         if (!dir.isDirectory) return false
         val files = dir.listFiles { f -> f.isFile && f.length() > 0 } ?: return false
@@ -113,20 +113,20 @@ object DocsSessionCache {
             val doc = when {
                 f.name == "README.md" -> DocInfo(
                     id = "README.md", title = "README",
-                    rawUrl = "$DOCS_RAW_BASE/README.md",
-                    cacheName = f.name, baseRawDir = DOCS_RAW_BASE, isMain = true,
+                    rawUrl = "$rawBase/README.md",
+                    cacheName = f.name, baseRawDir = rawBase, isMain = true,
                 )
                 f.name == "README_ru.md" -> DocInfo(
                     id = "README_ru.md", title = "README RU",
-                    rawUrl = "$DOCS_RAW_BASE/README_ru.md",
-                    cacheName = f.name, baseRawDir = DOCS_RAW_BASE,
+                    rawUrl = "$rawBase/README_ru.md",
+                    cacheName = f.name, baseRawDir = rawBase,
                 )
                 f.name.startsWith("docs__") && f.name.endsWith(".md") -> {
                     val name = f.name.removePrefix("docs__")
                     DocInfo(
                         id = "docs/$name", title = prettifyDocTitle(name),
-                        rawUrl = "$DOCS_RAW_BASE/docs/$name",
-                        cacheName = f.name, baseRawDir = "$DOCS_RAW_BASE/docs",
+                        rawUrl = "$rawBase/docs/$name",
+                        cacheName = f.name, baseRawDir = "$rawBase/docs",
                     )
                 }
                 else -> return@forEach
@@ -142,32 +142,34 @@ object DocsSessionCache {
     }
 }
 
-private fun fetchDocsList(): List<DocInfo> {
+private fun fetchDocsList(context: Context): List<DocInfo> {
+    val rawBase = context.getString(R.string.url_docs_raw_base)
+    val apiBase = context.getString(R.string.url_docs_api_base)
     val out = mutableListOf(
         DocInfo(
             id = "README.md",
             title = "README",
-            rawUrl = "$DOCS_RAW_BASE/README.md",
+            rawUrl = "$rawBase/README.md",
             cacheName = "README.md",
-            baseRawDir = DOCS_RAW_BASE,
+            baseRawDir = rawBase,
             isMain = true,
         ),
         DocInfo(
             id = "README_ru.md",
             title = "README RU",
-            rawUrl = "$DOCS_RAW_BASE/README_ru.md",
+            rawUrl = "$rawBase/README_ru.md",
             cacheName = "README_ru.md",
-            baseRawDir = DOCS_RAW_BASE,
+            baseRawDir = rawBase,
         ),
     )
     val req = Request.Builder()
-        .url("$DOCS_API_BASE/docs?ref=$DOCS_BRANCH")
+        .url("$apiBase/docs?ref=$DOCS_BRANCH")
         .header("User-Agent", "PixelOFoxApp")
         .header("Accept", "application/vnd.github+json")
         .build()
     sharedHttpClient.newCall(req).execute().use { resp ->
-        // 403 (rate limit) и прочие HTTP-ошибки — бросаем исключение, чтобы refresh()
-        // откатился на дисковый кэш и НЕ затирал полный список двумя fallback-README.
+        // 403 (rate limit) and other HTTP errors — throw so refresh()
+        // falls back to the disk cache and does NOT overwrite the full list with two fallback READMEs.
         if (!resp.isSuccessful) error("docs list HTTP ${resp.code}")
         val arr = JSONArray(resp.body?.string() ?: return out)
         for (i in 0 until arr.length()) {
@@ -183,7 +185,7 @@ private fun fetchDocsList(): List<DocInfo> {
                     title = prettifyDocTitle(name),
                     rawUrl = downloadUrl,
                     cacheName = "docs__$name",
-                    baseRawDir = "$DOCS_RAW_BASE/docs",
+                    baseRawDir = "$rawBase/docs",
                 )
             )
         }
@@ -217,7 +219,7 @@ private val mdImageRelRegex =
 private val htmlImgRelRegex =
     Regex("""<img\b[^>]*?\bsrc\s*=\s*["'](?!https?://|data:)([^"']+)["']""")
 
-/** Резолвит относительные картинки в абсолютные raw-URL, чтобы грузились из кеша/сети. */
+/** Resolves relative images into absolute raw URLs so they load from cache/network. */
 private fun absolutizeMarkdownResources(md: String, baseDir: String): String {
     var out = mdImageRelRegex.replace(md) { m ->
         val rel = m.groupValues[1].trim().removePrefix("./")

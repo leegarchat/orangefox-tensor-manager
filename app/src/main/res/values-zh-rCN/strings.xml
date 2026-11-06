@@ -44,6 +44,8 @@
     <string name="settings_collapse_h2_desc">将主要 ## 分区自动收进可展开块</string>
     <string name="settings_collapse_h2_home_title">首页 ## 分区</string>
     <string name="settings_collapse_h2_home_desc">将首页文档的 ## 分区收进可展开块</string>
+    <string name="settings_cache_images_title">缓存图片</string>
+    <string name="settings_cache_images_desc">将下载的横幅保存在磁盘上。关闭则始终加载最新副本</string>
     <string name="md_spoiler_title">剧透</string>
     <string name="filter_releases_main">主要</string>
     <string name="filter_releases_prerelease">预发布</string>
@@ -171,7 +173,6 @@
     <string name="action_wipe_all_files">删除所有文件</string>
     <string name="delete_confirm_text">“%1$s”将被永久删除。</string>
     <string name="delete_confirm_title">删除此文件？</string>
-    <string name="link_tg_channel">@OFRPforTensor</string>
     <string name="recovery_base_aosp">基于 AOSP</string>
     <string name="recovery_base_fmt">%1$s · 来源：%2$s</string>
     <string name="recovery_base_los">基于 LOS</string>
@@ -211,4 +212,5 @@
     <string name="wipe_done_toast">应用的所有文件已删除</string>
     <string name="root_missing_title">没有 Root 权限</string>
     <string name="root_missing_text">你没有 Root 权限，因此管理器无法修补你的 vendor_boot 来安装 OrangeFox。你只能浏览文档和下载 Release。</string>
+    <!-- Project URLs: single source of truth, identical in all locales, do not translate -->
 </resources>

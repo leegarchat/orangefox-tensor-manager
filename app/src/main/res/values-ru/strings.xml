@@ -44,6 +44,8 @@
     <string name="settings_collapse_h2_desc">Сворачивать основные разделы поста (##) в раскрывающиеся блоки</string>
     <string name="settings_collapse_h2_home_title">Секции ## на главной</string>
     <string name="settings_collapse_h2_home_desc">Сворачивать разделы (##) документов главной в раскрывающиеся блоки</string>
+    <string name="settings_cache_images_title">Кешировать изображения</string>
+    <string name="settings_cache_images_desc">Хранить загруженные баннеры на диске. Выключите, чтобы всегда грузить свежие копии</string>
     <string name="md_spoiler_title">Спойлер</string>
     <string name="filter_releases_main">Основные</string>
     <string name="filter_releases_prerelease">Пререлизы</string>
@@ -212,7 +214,7 @@
     <string name="recovery_base_aosp">AOSP based</string>
     <string name="recovery_base_twrp">TWRP based</string>
     <string name="recovery_running_now">запущена сейчас</string>
-    <string name="link_tg_channel">@OFRPforTensor</string>
     <string name="root_missing_title">Нет root-прав</string>
     <string name="root_missing_text">У вас нет root-прав, поэтому менеджер не сможет пропатчить ваш vendor_boot для установки OrangeFox. Вы можете только просматривать документацию и скачивать релизы.</string>
+    <!-- Project URLs: single source of truth, identical in all locales, do not translate -->
 </resources>

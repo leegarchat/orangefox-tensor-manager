@@ -32,8 +32,9 @@ import com.orangefox.tensor.manager.ui.DocLink
 import com.orangefox.tensor.manager.ui.MarkdownBody
 import com.orangefox.tensor.manager.ui.NetworkBannerImage
 import com.orangefox.tensor.manager.ui.extractBannerAndCleanMarkdown
+import com.orangefox.tensor.manager.ui.isWebUrl
 
-/** Состояние навигации Home для круглых кнопок в Root (вне записываемого слоя блюра). */
+/** Home navigation state for the round buttons in Root (outside the recorded blur layer). */
 class HomeNavState {
     var visible by mutableStateOf(false)
     var canGoBack by mutableStateOf(false)
@@ -41,29 +42,26 @@ class HomeNavState {
     var onHome: (() -> Unit)? = null
 }
 
-/** Состояние полосы чипов документов Home (сама полоса живёт в Root, вне записываемого слоя). */
+/** Home docs chip-strip state (the strip itself lives in Root, outside the recorded layer). */
 class HomeChipsState {
     var docs by mutableStateOf<List<DocInfo>>(emptyList())
     var currentId by mutableStateOf<String?>(null)
     var onSelect: ((String) -> Unit)? = null
 }
 
-private const val GH_BLOB_BASE =
-    "https://github.com/leegarchat/twrp_device_google_pixels/blob/R12_16"
-
-/** Резолвит ссылку из markdown в internal (свой док) или external (браузер). */
-fun resolveDocLink(target: String, currentId: String?, docs: List<DocInfo>): DocLink {
+/** Resolves a markdown link into internal (own doc) or external (browser).
+ * The blob-URL base comes from resources (url_gh_blob_base), assembly stays in code. */
+fun resolveDocLink(target: String, currentId: String?, docs: List<DocInfo>, ghBlobBase: String): DocLink {
     val t = target.trim()
     if (t.isEmpty()) return DocLink.External(t)
-    if (t.startsWith("http://", ignoreCase = true) ||
-        t.startsWith("https://", ignoreCase = true) ||
+    if (isWebUrl(t) ||
         t.startsWith("mailto:", ignoreCase = true)
     ) return DocLink.External(t)
     if (t.startsWith("#")) return DocLink.External(t)
     val path = t.substringBefore("#").trim().substringBefore("?")
     if (path.isEmpty()) return DocLink.External(t)
 
-    // Абсолютные github-ссылки вида /<owner>/<repo>/blob/<branch>/docs/x.md
+    // Absolute GitHub links of the form /<owner>/<repo>/blob/<branch>/docs/x.md
     val blobMatch = Regex("""/blob/[^/]+/(.+)$""").find(path)
     val norm = if (blobMatch != null) {
         normalizeDocPath("", blobMatch.groupValues[1])
@@ -73,7 +71,7 @@ fun resolveDocLink(target: String, currentId: String?, docs: List<DocInfo>): Doc
     }
     val known = docs.firstOrNull { it.id.equals(norm, ignoreCase = true) }
     return if (known != null) DocLink.Internal(known.id)
-    else DocLink.External("$GH_BLOB_BASE/$norm")
+    else DocLink.External("$ghBlobBase/$norm")
 }
 
 private fun normalizeDocPath(baseDir: String, rel: String): String {
@@ -97,6 +95,7 @@ fun HomeScreen(
     topInset: Dp,
     chipsBarHeight: Dp,
     collapseH2Home: Boolean,
+    cacheImages: Boolean,
     nav: HomeNavState,
     chips: HomeChipsState,
 ) {
@@ -115,7 +114,7 @@ fun HomeScreen(
     val listState = rememberLazyListState()
 
     LaunchedEffect(Unit) {
-        DocsSessionCache.ensureLoaded(scope, cacheDir, prefs)
+        DocsSessionCache.ensureLoaded(scope, context, cacheDir, prefs)
     }
     LaunchedEffect(docs) {
         if (currentId == null) {
@@ -168,8 +167,10 @@ fun HomeScreen(
 
     val current = docs.firstOrNull { it.id == currentId }
     val raw = current?.let { contents[it.id] }
-    val (bannerUrl, cleanBody) = remember(raw) {
-        if (raw != null) extractBannerAndCleanMarkdown(raw) else null to ""
+    val rawBase = stringResource(R.string.url_github_raw_base)
+    val ghBlobBase = stringResource(R.string.url_gh_blob_base)
+    val (bannerUrl, cleanBody) = remember(raw, rawBase) {
+        if (raw != null) extractBannerAndCleanMarkdown(raw, rawBase) else null to ""
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -190,7 +191,7 @@ fun HomeScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(stringResource(R.string.releases_error, listError ?: ""))
                         Button(onClick = {
-                            DocsSessionCache.refresh(scope, cacheDir, prefs, force = true)
+                            DocsSessionCache.refresh(scope, context, cacheDir, prefs, force = true)
                         }) { Text(stringResource(R.string.action_retry)) }
                     }
                 }
@@ -206,6 +207,7 @@ fun HomeScreen(
                             NetworkBannerImage(
                                 url = bannerUrl,
                                 modifier = Modifier.fillMaxWidth(),
+                                cacheImagesEnabled = cacheImages,
                             )
                         }
                     }
@@ -213,7 +215,8 @@ fun HomeScreen(
                         MarkdownBody(
                             md = cleanBody,
                             collapseH2Sections = collapseH2Home,
-                            docLinkResolver = { target -> resolveDocLink(target, currentId, docs) },
+                            cacheImagesEnabled = cacheImages,
+                            docLinkResolver = { target -> resolveDocLink(target, currentId, docs, ghBlobBase) },
                             onDocLinkClick = { docId -> openDoc(docId) },
                         )
                     }

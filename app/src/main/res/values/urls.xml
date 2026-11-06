@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="url_releases_api" translatable="false">https://api.github.com/repos/leegarchat/twrp_device_google_pixels/releases</string>
+    <string name="url_release_tag_base" translatable="false">https://github.com/leegarchat/twrp_device_google_pixels/releases/tag/</string>
+    <string name="url_docs_raw_base" translatable="false">https://raw.githubusercontent.com/leegarchat/twrp_device_google_pixels/R12_16</string>
+    <string name="url_docs_api_base" translatable="false">https://api.github.com/repos/leegarchat/twrp_device_google_pixels/contents</string>
+    <string name="url_gh_blob_base" translatable="false">https://github.com/leegarchat/twrp_device_google_pixels/blob/R12_16</string>
+    <string name="url_github_raw_base" translatable="false">https://raw.githubusercontent.com/</string>
+    <string name="url_donate" translatable="false">https://github.com/leegarchat/twrp_device_google_pixels/tree/R12_16#readme</string>
+    <string name="url_tg_channel" translatable="false">https://t.me/OFRPforTensor</string>
+    <string name="url_tg_discussion" translatable="false">https://t.me/OFRPforTensorDiscussion</string>
+    <string name="link_tg_channel" translatable="false">@OFRPforTensor</string>
+    <string-array name="xda_thread_titles" translatable="false">
+    <item>Pixel 6</item>
+    <item>Pixel 6 Pro</item>
+    <item>Pixel 6a</item>
+    <item>Pixel 7</item>
+    <item>Pixel 7 Pro</item>
+    <item>Pixel 7a</item>
+    <item>Pixel 8</item>
+    <item>Pixel 8 Pro</item>
+    <item>Pixel 8a</item>
+    <item>Pixel 9</item>
+    <item>Pixel 9 Pro / Pro XL</item>
+    <item>Pixel 9a</item>
+    <item>Pixel Fold</item>
+    <item>Pixel Tablet</item>
+    <item>Pixel 9 Pro Fold</item>
+    <item>Pixel 10</item>
+    <item>Pixel 10 Pro / Pro XL</item>
+    <item>Pixel 10a</item>
+    <item>Pixel 10 Pro Fold</item>
+    <item>Pixel 11</item>
+    <item>Pixel 11 Pro / Pro XL</item>
+    </string-array>
+    <string-array name="xda_thread_urls" translatable="false">
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-6.4806927/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-6-pro.4806929/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-6a.4806930/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-7.4783086/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-7-pro.4783087/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-7a.4783088/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-8.4783089/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-8-pro.4783091/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-8a.4783092/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-9.4783093/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-9-pro-pro-xl.4783094/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-9a.4783096/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-fold.4806920/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-tablet.4806921/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-9-pro-fold.4806922/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-10.4806924/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-10-pro-pro-xl.4806925/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-10a.4806923/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-10-pro-fold.4806926/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-11.4806931/</item>
+    <item>https://xdaforums.com/t/recovery-unofficial-r12-0-orangefox-recovery-project-google-pixel-11-pro-pro-xl.4806932/</item>
+    </string-array>
+    <string-array name="tg_family_chat_titles" translatable="false">
+    <item>G1 · Pixel 6</item>
+    <item>G2 · Pixel 7</item>
+    <item>G3 · Pixel 8</item>
+    <item>G4 · Pixel 9</item>
+    <item>G5 · Pixel 10</item>
+    <item>G6 · Pixel 11</item>
+    </string-array>
+    <string-array name="tg_family_chat_urls" translatable="false">
+    <item>https://t.me/OFRP_tensor_g1</item>
+    <item>https://t.me/OFRP_tensor_g2</item>
+    <item>https://t.me/OFRP_tensor_g3</item>
+    <item>https://t.me/OFRP_tensor_g4</item>
+    <item>https://t.me/OFRP_tensor_g5</item>
+    <item>https://t.me/OFRP_tensor_g6</item>
+    </string-array>
+</resources>
