@@ -59,6 +59,12 @@
     <string name="notify_new_release_title">Neues OrangeFox-Release verfügbar</string>
     <string name="settings_notify_releases_title">Über neue Releases benachrichtigen</string>
     <string name="settings_notify_releases_desc">Stabil = stabile Projekt-Releases. Alle schließt Test-Builds mit Prerelease-Status ein.</string>
+    <string name="settings_date_format_title">Datumsformat</string>
+    <string name="settings_date_format_desc">Wie die Datumsangaben von Releases angezeigt werden</string>
+    <string name="date_format_auto">Auto</string>
+    <string name="date_format_iso">ISO</string>
+    <string name="date_format_eu">EU</string>
+    <string name="date_format_us">US</string>
     <string name="root_required_title">Root-Zugriff erforderlich</string>
     <string name="root_required_message">Das Installationsprogramm benötigt Superuser-Rechte zum Lesen und Flashen der vendor_boot-Partitionen (Magisk / KernelSU / APatch). Bitte Root-Zugriff gewähren und erneut versuchen.</string>
     <string name="action_ok">OK</string>

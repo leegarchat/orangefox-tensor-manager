@@ -58,6 +58,12 @@
     <string name="notify_new_release_title">New OrangeFox release available</string>
     <string name="settings_notify_releases_title">Notify about new releases</string>
     <string name="settings_notify_releases_desc">Main means stable project releases. All includes test builds with prerelease status.</string>
+    <string name="settings_date_format_title">Date format</string>
+    <string name="settings_date_format_desc">How release dates are shown</string>
+    <string name="date_format_auto">Auto</string>
+    <string name="date_format_iso">ISO</string>
+    <string name="date_format_eu">EU</string>
+    <string name="date_format_us">US</string>
     <string name="root_required_title">Root access required</string>
     <string name="root_required_message">The installer needs superuser rights to read and flash vendor_boot partitions (Magisk / KernelSU / APatch). Grant root access and try again.</string>
     <string name="action_ok">OK</string>

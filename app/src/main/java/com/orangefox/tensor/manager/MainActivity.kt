@@ -171,6 +171,8 @@ import java.io.FileOutputStream
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -649,6 +651,7 @@ class MainActivity : ComponentActivity() {
             var collapseH2AsSpoilers by remember { mutableStateOf(prefs.collapseH2AsSpoilers) }
             var collapseH2Home by remember { mutableStateOf(prefs.collapseH2Home) }
             var releaseNotifyMode by remember { mutableStateOf(ReleaseNotifyMode.fromOrdinal(prefs.releaseNotifyMode)) }
+            var dateFormatMode by remember { mutableStateOf(DateFormatMode.fromName(prefs.dateFormatMode)) }
             var cacheImages by remember { mutableStateOf(prefs.cacheImages) }
             var forceGithubToken by remember { mutableStateOf(prefs.forceGithubToken) }
             val notifPermLauncher = rememberLauncherForActivityResult(
@@ -705,6 +708,11 @@ class MainActivity : ComponentActivity() {
                             notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                         ReleaseCheckWorker.schedule(context, it)
+                    },
+                    dateFormatMode = dateFormatMode,
+                    onDateFormatModeChange = {
+                        dateFormatMode = it
+                        prefs.dateFormatMode = it.name
                     },
                 )
             }
@@ -778,6 +786,8 @@ fun Root(
     onForceGithubTokenChange: (Boolean) -> Unit = {},
     releaseNotifyMode: ReleaseNotifyMode,
     onReleaseNotifyModeChange: (ReleaseNotifyMode) -> Unit,
+    dateFormatMode: DateFormatMode,
+    onDateFormatModeChange: (DateFormatMode) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1139,6 +1149,7 @@ fun Root(
                             showBannerInCollapsed = showBannerInCollapsed,
                             collapseH2AsSpoilers = collapseH2AsSpoilers,
                             cacheImages = cacheImages,
+                            dateFormatMode = dateFormatMode,
                             focusReleaseTag = focusReleaseTag,
                             onFocusReleaseHandled = { focusReleaseTag = null },
                             onInstallAsset = { rel, asset ->
@@ -1199,6 +1210,8 @@ fun Root(
                             onCacheImagesChange = onCacheImagesChange,
                             releaseNotifyMode = releaseNotifyMode,
                             onReleaseNotifyModeChange = onReleaseNotifyModeChange,
+                            dateFormatMode = dateFormatMode,
+                            onDateFormatModeChange = onDateFormatModeChange,
                             onWipeAllFiles = {
                                 scope.launch(Dispatchers.IO) {
                                     RootInstallerEngine.wipeAllAppFiles(context)
@@ -1733,6 +1746,8 @@ private fun SettingsScreen(
     onForceGithubTokenChange: (Boolean) -> Unit = {},
     releaseNotifyMode: ReleaseNotifyMode,
     onReleaseNotifyModeChange: (ReleaseNotifyMode) -> Unit,
+    dateFormatMode: DateFormatMode,
+    onDateFormatModeChange: (DateFormatMode) -> Unit,
     onWipeAllFiles: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -1943,6 +1958,31 @@ private fun SettingsScreen(
                             )
                             Text(
                                 text = stringResource(R.string.settings_notify_releases_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 18.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                        )
+                        Column(
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.settings_date_format_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            ExpressiveSegmentedRow(
+                                items = DateFormatMode.entries,
+                                selectedItem = dateFormatMode,
+                                onSelect = onDateFormatModeChange,
+                                labelProvider = { stringResource(it.labelRes) },
+                            )
+                            Text(
+                                text = stringResource(R.string.settings_date_format_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -2211,6 +2251,7 @@ fun ReleasesScreen(
     showBannerInCollapsed: Boolean,
     collapseH2AsSpoilers: Boolean,
     cacheImages: Boolean,
+    dateFormatMode: DateFormatMode,
     focusReleaseTag: String?,
     onFocusReleaseHandled: () -> Unit,
     onInstallAsset: (ReleaseInfo, ReleaseAsset) -> Unit,
@@ -2446,6 +2487,7 @@ fun ReleasesScreen(
                             showBannerInCollapsed = showBannerInCollapsed,
                             collapseH2AsSpoilers = collapseH2AsSpoilers,
                             cacheImages = cacheImages,
+                            dateFormatMode = dateFormatMode,
                             onToggle = {
                                 haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                                 val next = !isExp
@@ -2670,6 +2712,7 @@ private fun ReleaseCard(
     showBannerInCollapsed: Boolean,
     collapseH2AsSpoilers: Boolean,
     cacheImages: Boolean,
+    dateFormatMode: DateFormatMode,
     onToggle: () -> Unit,
     onCardBoundsChanged: (Rect) -> Unit,
     onAnchorBoundsChanged: (Rect) -> Unit,
@@ -2747,6 +2790,7 @@ private fun ReleaseCard(
                         info = info,
                         isLatestStable = isLatestStable,
                         isExpanded = isExpanded,
+                        dateFormatMode = dateFormatMode,
                         modifier = Modifier
                             .background(headerAccentBg)
                             .clickable {
@@ -2888,6 +2932,7 @@ private fun ReleaseCard(
                             info = info,
                             isLatestStable = isLatestStable,
                             isExpanded = false,
+                            dateFormatMode = dateFormatMode,
                             modifier = Modifier
                                 .sharedBounds(
                                     sharedContentState = rememberSharedContentState(key = "header_${info.tag}"),
@@ -2906,6 +2951,7 @@ private fun ReleaseCard(
                             info = info,
                             isLatestStable = isLatestStable,
                             isExpanded = true,
+                            dateFormatMode = dateFormatMode,
                             modifier = Modifier
                                 .sharedBounds(
                                     sharedContentState = rememberSharedContentState(key = "header_${info.tag}"),
@@ -3016,18 +3062,32 @@ private fun OpenGitHubReleaseButton(tag: String) {
     }
 }
 
-private val releaseDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+private val releaseDateIsoFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT)
+private val releaseDateEuFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", Locale.ROOT)
+private val releaseDateUsFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("MM/dd/yyyy hh:mm a", Locale.US)
 
 /**
  * Formats a GitHub ISO-8601 timestamp (`published_at`/`created_at`) in the
- * device timezone. Digits-only pattern: no locale-dependent text, so no
- * string resources needed. Returns null when the input is missing/unparseable
+ * device timezone. Returns null when the input is missing/unparseable
  * (caller hides the date capsule entirely in that case).
+ * Auto = system date+time format for the device locale
+ * (MEDIUM date + SHORT time, e.g. US locale gives MM/dd/yy + 12-hour clock).
  */
-private fun formatReleaseDate(iso: String?): String? {
+private fun formatReleaseDate(iso: String?, mode: DateFormatMode = DateFormatMode.Auto): String? {
     if (iso.isNullOrBlank()) return null
     return try {
-        OffsetDateTime.parse(iso).atZoneSameInstant(ZoneId.systemDefault()).format(releaseDateFormatter)
+        val zoned = OffsetDateTime.parse(iso).atZoneSameInstant(ZoneId.systemDefault())
+        when (mode) {
+            DateFormatMode.Auto -> DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
+                .withLocale(Locale.getDefault())
+                .format(zoned)
+            DateFormatMode.Iso -> zoned.format(releaseDateIsoFormatter)
+            DateFormatMode.Eu -> zoned.format(releaseDateEuFormatter)
+            DateFormatMode.Us -> zoned.format(releaseDateUsFormatter)
+        }
     } catch (_: Exception) {
         null
     }
@@ -3039,6 +3099,7 @@ private fun ReleaseHeaderRow(
     isExpanded: Boolean,
     modifier: Modifier = Modifier,
     isLatestStable: Boolean = false,
+    dateFormatMode: DateFormatMode = DateFormatMode.Auto,
 ) {
     val rotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
@@ -3049,8 +3110,10 @@ private fun ReleaseHeaderRow(
     // Light:  Latest container #DAFBE1 / text #1A7F37; Pre-release #FFF8C5 / #9A6700.
     // Dark:   muted Latest container #1C3D2A / text #3FB950; Pre-release #3B2E16 / #D29922.
     val badgesDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    // Formatted once per release (remember), not on every recomposition/frame.
-    val dateText = remember(info.publishedAt) { formatReleaseDate(info.publishedAt) }
+    // Formatted once per release and mode (remember), not on every recomposition/frame.
+    val dateText = remember(info.publishedAt, dateFormatMode) {
+        formatReleaseDate(info.publishedAt, dateFormatMode)
+    }
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,

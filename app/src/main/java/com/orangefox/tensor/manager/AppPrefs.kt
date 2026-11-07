@@ -51,6 +51,10 @@ class AppPrefs(context: Context) {
         get() = sp.getInt(KEY_RELEASE_NOTIFY, ReleaseNotifyMode.None.ordinal)
         set(v) { sp.edit().putInt(KEY_RELEASE_NOTIFY, v).apply() }
 
+    var dateFormatMode: String
+        get() = sp.getString(KEY_DATE_FORMAT, DateFormatMode.Auto.name) ?: DateFormatMode.Auto.name
+        set(v) { sp.edit().putString(KEY_DATE_FORMAT, v).apply() }
+
     var backupVendorBootOnFlash: Boolean
         get() = sp.getBoolean(KEY_BACKUP_ON_FLASH, true)
         set(v) { sp.edit().putBoolean(KEY_BACKUP_ON_FLASH, v).apply() }
@@ -85,6 +89,7 @@ class AppPrefs(context: Context) {
         private const val KEY_DOCS_REFRESH = "docs_last_refresh"
         private const val KEY_RELEASE_FILTER = "release_filter_mode"
         private const val KEY_RELEASE_NOTIFY = "release_notify_mode"
+        private const val KEY_DATE_FORMAT = "date_format_mode"
         private const val KEY_BACKUP_ON_FLASH = "backup_vendor_boot_on_flash"
         private const val KEY_SPACE_ERROR_SEEN = "space_error_seen"
         private const val KEY_LAST_NOTIFIED_TAG = "last_notified_release_tag"
@@ -120,5 +125,18 @@ enum class ReleaseNotifyMode(@StringRes val labelRes: Int) {
 
     companion object {
         fun fromOrdinal(o: Int): ReleaseNotifyMode = entries.getOrElse(o) { None }
+    }
+}
+
+enum class DateFormatMode(@StringRes val labelRes: Int) {
+    Auto(R.string.date_format_auto),
+    Iso(R.string.date_format_iso),
+    Eu(R.string.date_format_eu),
+    Us(R.string.date_format_us);
+
+    companion object {
+        fun fromName(name: String?): DateFormatMode =
+            entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: Auto
+        fun fromOrdinal(o: Int): DateFormatMode = entries.getOrElse(o) { Auto }
     }
 }

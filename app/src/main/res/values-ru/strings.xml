@@ -59,6 +59,12 @@
     <string name="notify_new_release_title">Доступен новый релиз OrangeFox</string>
     <string name="settings_notify_releases_title">Сообщать о новых релизах</string>
     <string name="settings_notify_releases_desc">Основные — это стабильные релизы проекта. Все — включая тестовые сборки со статусом пререлиза.</string>
+    <string name="settings_date_format_title">Формат даты</string>
+    <string name="settings_date_format_desc">Как показывать даты релизов</string>
+    <string name="date_format_auto">Авто</string>
+    <string name="date_format_iso">ISO</string>
+    <string name="date_format_eu">EU</string>
+    <string name="date_format_us">US</string>
     <string name="root_required_title">Требуются права Root</string>
     <string name="root_required_message">Для работы установщика нужен root: чтение и прошивка разделов vendor_boot (Magisk / KernelSU / APatch). Выдайте права суперпользователя и повторите попытку.</string>
     <string name="action_ok">ОК</string>
