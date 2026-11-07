@@ -1,4 +1,4 @@
-package com.orangefox.tensor.manager
+package com.orangefox.tensor.manager.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,11 +7,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import com.orangefox.tensor.manager.ui.ExpressiveLinearProgress
+import com.orangefox.tensor.manager.ui.edgeOutline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +36,13 @@ import com.orangefox.tensor.manager.ui.MarkdownBody
 import com.orangefox.tensor.manager.ui.NetworkBannerImage
 import com.orangefox.tensor.manager.ui.extractBannerAndCleanMarkdown
 import com.orangefox.tensor.manager.ui.isWebUrl
+import com.orangefox.tensor.manager.AppPrefs
+import com.orangefox.tensor.manager.R
+import com.orangefox.tensor.manager.data.DocInfo
+import com.orangefox.tensor.manager.data.DocsSessionCache
+
+
+
 
 /** Home navigation state for the round buttons in Root (outside the recorded blur layer). */
 class HomeNavState {
@@ -190,9 +200,12 @@ fun HomeScreen(
                 listError != null && docs.isEmpty() -> item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(stringResource(R.string.releases_error, listError ?: ""))
-                        Button(onClick = {
-                            DocsSessionCache.refresh(scope, context, cacheDir, prefs, force = true)
-                        }) { Text(stringResource(R.string.action_retry)) }
+                        Button(
+                            onClick = {
+                                DocsSessionCache.refresh(scope, context, cacheDir, prefs, force = true)
+                            },
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.edgeOutline()),
+                        ) { Text(stringResource(R.string.action_retry)) }
                     }
                 }
                 raw == null -> item {

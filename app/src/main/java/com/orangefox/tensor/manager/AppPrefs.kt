@@ -2,6 +2,7 @@ package com.orangefox.tensor.manager
 
 import android.content.Context
 import androidx.annotation.StringRes
+import com.orangefox.tensor.manager.data.ReleaseFilterMode
 
 class AppPrefs(context: Context) {
     private val sp = context.applicationContext
@@ -105,16 +106,6 @@ enum class ThemeMode(@StringRes val labelRes: Int) {
 
     companion object {
         fun fromOrdinal(o: Int): ThemeMode = entries.getOrElse(o) { System }
-    }
-}
-
-enum class ReleaseFilterMode(@StringRes val labelRes: Int) {
-    Main(R.string.filter_releases_main),
-    Prerelease(R.string.filter_releases_prerelease),
-    All(R.string.filter_releases_all);
-
-    companion object {
-        fun fromOrdinal(o: Int): ReleaseFilterMode = entries.getOrElse(o) { All }
     }
 }
 

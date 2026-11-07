@@ -1,4 +1,4 @@
-package com.orangefox.tensor.manager
+package com.orangefox.tensor.manager.data
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
@@ -10,6 +10,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipFile
+import com.orangefox.tensor.manager.AppPrefs
+import com.orangefox.tensor.manager.R
+
+
+
 
 data class PreparedAioEnv(
     val workDir: File,
@@ -321,13 +326,6 @@ object RootInstallerEngine {
      * Leaves settings (AppPrefs) and the docs cache untouched.
      */
     fun wipeAllAppFiles(context: Context) {
-        ReleasesSessionCache.cancelAllDownloads()
-        ReleasesSessionCache.downloads.keys.toList().forEach { key ->
-            (ReleasesSessionCache.downloads[key] as? AssetDl.Done)?.let { done ->
-                File(done.path).delete()
-                ReleasesSessionCache.downloads.remove(key)
-            }
-        }
         getImportedDir(context).listFiles()?.forEach { it.deleteRecursively() }
         getBackupsDir(context).listFiles()?.forEach { it.delete() }
         File(context.filesDir, "installer_work").deleteRecursively()

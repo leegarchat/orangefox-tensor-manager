@@ -1,4 +1,4 @@
-package com.orangefox.tensor.manager
+package com.orangefox.tensor.manager.data
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -16,6 +16,13 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import java.util.concurrent.TimeUnit
+import com.orangefox.tensor.manager.AppPrefs
+import com.orangefox.tensor.manager.MainActivity
+import com.orangefox.tensor.manager.R
+import com.orangefox.tensor.manager.ReleaseNotifyMode
+
+
+
 
 class ReleaseCheckWorker(
     appContext: Context,

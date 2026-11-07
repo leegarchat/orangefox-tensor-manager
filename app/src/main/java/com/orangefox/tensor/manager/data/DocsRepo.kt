@@ -1,4 +1,4 @@
-package com.orangefox.tensor.manager
+package com.orangefox.tensor.manager.data
 
 import android.content.Context
 import androidx.compose.runtime.getValue
@@ -13,6 +13,11 @@ import okhttp3.Request
 import org.json.JSONArray
 import java.io.File
 import java.util.Locale
+import com.orangefox.tensor.manager.AppPrefs
+import com.orangefox.tensor.manager.R
+
+
+
 
 // Experimenting-docs branch. Full base URLs live in resources
 // (url_docs_raw_base / url_docs_api_base) and are resolved via Context.
