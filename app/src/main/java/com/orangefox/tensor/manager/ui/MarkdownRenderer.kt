@@ -163,6 +163,21 @@ object SessionImageCache {
         return memoryCache.get(url)
     }
 
+    /**
+     * Memory → disk probe without network (safe from any thread, IO internally).
+     * A disk hit is promoted to memory, so the next [getImmediate] hits.
+     * Used to avoid flashing a loading indicator when the disk cache hits.
+     */
+    suspend fun loadFromCacheOnly(rawUrl: String, rawBase: String): Bitmap? =
+        withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
+            val url = normalizeGitHubImageUrl(rawUrl, rawBase)
+            memoryCache.get(url) ?: if (diskCacheEnabled) {
+                readDiskBitmap(url)?.also { memoryCache.put(url, it) }
+            } else {
+                null
+            }
+        }
+
     suspend fun loadOrAwait(rawUrl: String, rawBase: String): Bitmap? {
         val url = normalizeGitHubImageUrl(rawUrl, rawBase)
         memoryCache.get(url)?.let { return it }
@@ -312,11 +327,23 @@ fun NetworkBannerImage(
         mutableStateOf(SessionImageCache.getImmediate(normalizedUrl, rawBase))
     }
     var failed by remember(normalizedUrl) { mutableStateOf(false) }
+    // Becomes true only after the memory → disk probe missed: from that point
+    // the load is a real network fetch and the progress indicator is legit.
+    var diskMiss by remember(normalizedUrl) { mutableStateOf(false) }
 
     LaunchedEffect(normalizedUrl, rawBase, cacheImagesEnabled) {
         SessionImageCache.bindDiskCache(context.cacheDir, cacheImagesEnabled)
         if (bitmap != null) return@LaunchedEffect
         failed = false
+        diskMiss = false
+        // Fast cache probe (memory → disk) with no loading indicator:
+        // a cache hit must never flash progress, not even for a frame.
+        val cached = SessionImageCache.loadFromCacheOnly(normalizedUrl, rawBase)
+        if (cached != null) {
+            bitmap = cached
+            return@LaunchedEffect
+        }
+        diskMiss = true
         val loaded = SessionImageCache.loadOrAwait(normalizedUrl, rawBase)
         if (loaded != null) {
             bitmap = loaded
@@ -339,7 +366,7 @@ fun NetworkBannerImage(
                     .aspectRatio(ratio),
             )
         }
-        !failed -> {
+        !failed && diskMiss -> {
             Box(
                 modifier = modifier
                     .fillMaxWidth()
@@ -349,6 +376,16 @@ fun NetworkBannerImage(
             ) {
                 ExpressiveLinearProgress(modifier = Modifier.width(120.dp))
             }
+        }
+        !failed -> {
+            // Cache probe in flight: reserve the 16:9 slot, but show no progress —
+            // a disk hit must resolve straight to the image.
+            Box(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+            )
         }
     }
 }

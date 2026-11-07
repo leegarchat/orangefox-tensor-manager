@@ -355,23 +355,26 @@ object ReleasesSessionCache {
 
     fun ensureLoaded(scope: CoroutineScope, context: Context, cacheDir: File) {
         if (releases != null || isRefreshing) return
-        refresh(scope, context, cacheDir)
+        refresh(scope, context, cacheDir, force = false)
     }
 
-    fun refresh(scope: CoroutineScope, context: Context, cacheDir: File) {
+    fun refresh(scope: CoroutineScope, context: Context, cacheDir: File, force: Boolean = false) {
         if (isRefreshing) return
         isRefreshing = true
         listError = null
         val appContext = context.applicationContext
         scope.launch(Dispatchers.IO) {
             try {
-                // Manual list refresh: wipe the image disk cache,
+                // Manual list refresh only: wipe the image disk cache,
                 // then everything is re-downloaded from the network exactly once and cached again.
+                // Background loads (ensureLoaded) must never wipe the cache.
                 com.orangefox.tensor.manager.ui.SessionImageCache.bindDiskCache(
                     appContext.cacheDir,
                     AppPrefs(appContext).cacheImages,
                 )
-                com.orangefox.tensor.manager.ui.SessionImageCache.clearDiskSync()
+                if (force) {
+                    com.orangefox.tensor.manager.ui.SessionImageCache.clearDiskSync()
+                }
                 val loaded = fetchReleases(appContext)
                 loaded.forEach { rel ->
                     rel.assets.forEach { asset ->
@@ -1169,7 +1172,7 @@ fun Root(
                                 if (tab == Tab.Home) {
                                     DocsSessionCache.refresh(scope, context, context.cacheDir, docsPrefs, force = true)
                                 } else {
-                                    ReleasesSessionCache.refresh(scope, context, context.cacheDir)
+                                    ReleasesSessionCache.refresh(scope, context, context.cacheDir, force = true)
                                 }
                             },
                         ) {
@@ -2244,7 +2247,7 @@ fun ReleasesScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(stringResource(R.string.releases_error, listError))
-                        Button(onClick = { ReleasesSessionCache.refresh(scope, context, cacheDir) }) {
+                        Button(onClick = { ReleasesSessionCache.refresh(scope, context, cacheDir, force = true) }) {
                             Text(stringResource(R.string.action_retry))
                         }
                     }
@@ -2458,7 +2461,6 @@ private fun rememberReleaseBannerAccent(tag: String, bannerUrl: String?, cacheIm
     val rawBase = stringResource(R.string.url_github_raw_base)
     LaunchedEffect(tag, bannerUrl, rawBase, cacheImages) {
         SessionImageCache.bindDiskCache(context.cacheDir, cacheImages)
-        if (accent != null || bannerUrl == null) return@LaunchedEffect
         if (accent != null || bannerUrl == null) return@LaunchedEffect
         val bmp = withContext(Dispatchers.IO) {
             SessionImageCache.getImmediate(bannerUrl, rawBase) ?: SessionImageCache.loadOrAwait(bannerUrl, rawBase)
