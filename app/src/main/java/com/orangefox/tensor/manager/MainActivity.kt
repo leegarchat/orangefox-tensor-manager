@@ -170,7 +170,14 @@ import java.io.FileOutputStream
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-internal val sharedHttpClient = OkHttpClient()
+internal val sharedHttpClient = OkHttpClient.Builder()
+    // No callTimeout on purpose: the same client streams large APK/ZIP
+    // downloads that may legitimately take minutes. Stalls are bounded
+    // by the per-read timeout instead; short metadata calls fail fast.
+    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+    .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+    .writeTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+    .build()
 
 /** Manager APK in releases: orangefox*tensor*manager*{versionCode}*.apk */
 internal fun isManagerApkAsset(name: String): Boolean {
@@ -389,11 +396,20 @@ object ReleasesSessionCache {
                 }
                 withContext(Dispatchers.Main) {
                     releases = loaded
-                    isRefreshing = false
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Scope cancelled (e.g. composition gone): the flag reset below
+                // still runs via NonCancellable, then cancellation propagates.
+                throw e
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    listError = e.message ?: "load failed"
+                val msg = e.message ?: "load failed"
+                withContext(Dispatchers.Main + kotlinx.coroutines.NonCancellable) {
+                    listError = msg
+                }
+            } finally {
+                // Guaranteed reset: a stuck/cancelled load must never leave
+                // isRefreshing=true forever (eternal spinner until restart).
+                withContext(Dispatchers.Main + kotlinx.coroutines.NonCancellable) {
                     isRefreshing = false
                 }
             }

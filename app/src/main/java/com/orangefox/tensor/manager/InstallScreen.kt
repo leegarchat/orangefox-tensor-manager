@@ -385,6 +385,9 @@ fun InstallScreen(
         } else {
             val releases = ReleasesSessionCache.releases
             val downloads = ReleasesSessionCache.downloads
+            var releaseFilterMode by remember {
+                mutableStateOf(ReleaseFilterMode.fromOrdinal(prefs.releaseFilterMode))
+            }
 
             LazyColumn(
                 state = listState,
@@ -520,6 +523,20 @@ fun InstallScreen(
                     )
                 }
 
+                item(key = "release_filter_bar") {
+                    Box(modifier = Modifier.padding(horizontal = 8.dp)) {
+                        ExpressiveSegmentedRow(
+                            items = ReleaseFilterMode.entries,
+                            selectedItem = releaseFilterMode,
+                            onSelect = { mode ->
+                                releaseFilterMode = mode
+                                prefs.releaseFilterMode = mode.ordinal
+                            },
+                            labelProvider = { stringResource(it.labelRes) },
+                        )
+                    }
+                }
+
                 if (releases == null) {
                     item(key = "loading_rel") {
                         Column(
@@ -531,7 +548,12 @@ fun InstallScreen(
                         }
                     }
                 } else {
-                    releases.forEach { rel ->
+                    val filteredReleases = when (releaseFilterMode) {
+                        ReleaseFilterMode.Main -> releases.filter { !it.prerelease }
+                        ReleaseFilterMode.Prerelease -> releases.filter { it.prerelease }
+                        ReleaseFilterMode.All -> releases
+                    }
+                    filteredReleases.forEach { rel ->
                         val assets = selectInstallAssetsForRelease(rel, downloads)
                         if (assets.isNotEmpty()) {
                             item(key = "rel_inst_${rel.tag}") {
@@ -732,6 +754,13 @@ private fun ReleaseInstallCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Text(
+                text = release.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -739,26 +768,26 @@ private fun ReleaseInstallCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = release.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
                         text = release.tag,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 FilledTonalButton(
                     onClick = onOpenRelease,
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
+                    modifier = Modifier.height(42.dp),
                 ) {
                     Text(
                         text = stringResource(R.string.action_open_release),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

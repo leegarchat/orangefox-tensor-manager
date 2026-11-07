@@ -83,13 +83,17 @@ object DocsSessionCache {
                     contents.clear()
                     contents.putAll(loaded)
                     prefs.docsLastRefresh = System.currentTimeMillis()
-                    isRefreshing = false
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
+                withContext(Dispatchers.Main + kotlinx.coroutines.NonCancellable) {
                     if (docs.isEmpty() && !loadFromDisk(context, cacheDir)) {
                         listError = e.message ?: "load failed"
                     }
+                }
+            } finally {
+                withContext(Dispatchers.Main + kotlinx.coroutines.NonCancellable) {
                     isRefreshing = false
                 }
             }

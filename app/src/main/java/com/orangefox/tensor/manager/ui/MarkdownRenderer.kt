@@ -199,6 +199,9 @@ object SessionImageCache {
                         .url(url)
                         .header("User-Agent", "PixelOFoxApp")
                         .build()
+                    // Timeouts come from sharedHttpClient (connect/read);
+                    // a stalled fetch throws and lands in the catch below,
+                    // so the deferred below ALWAYS completes.
                     com.orangefox.tensor.manager.sharedHttpClient.newCall(req).execute().use { resp ->
                         if (!resp.isSuccessful) return@use null
                         resp.body?.bytes()
@@ -218,11 +221,17 @@ object SessionImageCache {
             }
             deferred.complete(bmp)
             bmp
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Owner cancelled: unblock co-awaiters first, then propagate.
+            deferred.complete(null)
+            throw e
         } catch (e: Throwable) {
             deferred.complete(null)
             null
         } finally {
-            inFlight.remove(url)
+            // Remove only our own entry: a newer fetch for the same URL
+            // (created after a force-refresh race) must survive.
+            inFlight.remove(url, deferred)
         }
     }
 }
