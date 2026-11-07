@@ -119,6 +119,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1408,15 +1409,44 @@ fun Root(
                 label = "DockBounceScale",
             )
 
-            BottomBlurBar(
+            // Full-width tap catcher for the bottom strip (bar + 24.dp inset down to
+            // the screen edge): taps beside/below the bar die here (up is consumed,
+            // the LazyColumn underneath never sees them). Scrolls are untouched —
+            // once slop/a consumer claims the gesture we break WITHOUT consuming.
+            // No visuals, no size changes: only a gesture modifier on the container.
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp),
-                blurState = blurState,
-                blurRadius = blurRadius,
-                scale = dockScale,
-                shape = CircleShape,
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                    ?: event.changes.firstOrNull()
+                                    ?: break
+                                // Scroll/slop claimed elsewhere: let the list scroll as usual.
+                                if (change.isConsumed) break
+                                if (!change.pressed) {
+                                    // Pure tap release inside the strip: swallow it.
+                                    change.consume()
+                                    break
+                                }
+                                // Finger still down: wait, consuming nothing
+                                // (dock scrub + list scroll stay alive).
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.BottomCenter,
             ) {
+                BottomBlurBar(
+                    modifier = Modifier.padding(bottom = 24.dp),
+                    blurState = blurState,
+                    blurRadius = blurRadius,
+                    scale = dockScale,
+                    shape = CircleShape,
+                ) {
                 fun resolveTabAtX(x: Float): Tab? {
                     tabBounds.entries.firstOrNull { x in it.value }?.let { return it.key }
                     return tabBounds.entries.minByOrNull { entry ->
@@ -1586,6 +1616,7 @@ fun Root(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -2484,24 +2515,41 @@ private fun sampleBannerAccentColor(bmp: Bitmap): Color? {
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
+/**
+ * Loads the banner bitmap (memory → disk → network via [SessionImageCache]),
+ * samples its accent and caches it by release tag. Returns null while missing.
+ */
+private suspend fun loadSampledBannerAccent(tag: String, bannerUrl: String, rawBase: String): Color? {
+    val bmp = withContext(Dispatchers.IO) {
+        SessionImageCache.getImmediate(bannerUrl, rawBase) ?: SessionImageCache.loadOrAwait(bannerUrl, rawBase)
+    } ?: return null
+    val sampled = withContext(Dispatchers.Default) { sampleBannerAccentColor(bmp) } ?: return null
+    ReleaseHeaderAccentCache.accents[tag] = sampled
+    return sampled
+}
+
 @Composable
-private fun rememberReleaseBannerAccent(tag: String, bannerUrl: String?, cacheImages: Boolean): Color? {
+private fun rememberReleaseBannerAccent(
+    tag: String,
+    bannerUrl: String?,
+    cacheImages: Boolean,
+    isExpanded: Boolean,
+): Color? {
     var accent by remember(tag) { mutableStateOf(ReleaseHeaderAccentCache.accents[tag]) }
     val context = LocalContext.current
     val rawBase = stringResource(R.string.url_github_raw_base)
+    // Independent of banner visibility: warms the accent while the card is still collapsed.
     LaunchedEffect(tag, bannerUrl, rawBase, cacheImages) {
         SessionImageCache.bindDiskCache(context.cacheDir, cacheImages)
         if (accent != null || bannerUrl == null) return@LaunchedEffect
-        val bmp = withContext(Dispatchers.IO) {
-            SessionImageCache.getImmediate(bannerUrl, rawBase) ?: SessionImageCache.loadOrAwait(bannerUrl, rawBase)
-        }
-        if (bmp != null) {
-            val sampled = withContext(Dispatchers.Default) { sampleBannerAccentColor(bmp) }
-            if (sampled != null) {
-                ReleaseHeaderAccentCache.accents[tag] = sampled
-                accent = sampled
-            }
-        }
+        loadSampledBannerAccent(tag, bannerUrl, rawBase)?.let { accent = it }
+    }
+    // The banner image is never composed while showBannerInCollapsed=false, so a failed
+    // or skipped first load would leave the expanded header unaccented forever.
+    // Retry exactly on expand; the 260ms animateColorAsState below morphs to the result.
+    LaunchedEffect(tag, bannerUrl, isExpanded) {
+        if (!isExpanded || accent != null || bannerUrl == null) return@LaunchedEffect
+        loadSampledBannerAccent(tag, bannerUrl, rawBase)?.let { accent = it }
     }
     return accent
 }
@@ -2542,7 +2590,12 @@ private fun ReleaseCard(
     // the accent is applied at 0.22 alpha over surfaceContainerLow and reads well in both themes.
     // Without a banner — a delicate primaryContainer fallback of the same strength.
     val cardBaseColor = MaterialTheme.colorScheme.surfaceContainerLow
-    val bannerAccent = rememberReleaseBannerAccent(tag = info.tag, bannerUrl = info.bannerUrl, cacheImages = cacheImages)
+    val bannerAccent = rememberReleaseBannerAccent(
+        tag = info.tag,
+        bannerUrl = info.bannerUrl,
+        cacheImages = cacheImages,
+        isExpanded = isExpanded,
+    )
     val expandedHeaderTarget = if (bannerAccent != null) {
         bannerAccent.copy(alpha = 0.22f).compositeOver(cardBaseColor)
     } else {
@@ -2588,6 +2641,7 @@ private fun ReleaseCard(
                         isLatestStable = isLatestStable,
                         isExpanded = isExpanded,
                         modifier = Modifier
+                            .background(headerAccentBg)
                             .clickable {
                                 cardHaptics.performHapticFeedback(HapticFeedbackType.ContextClick)
                                 onToggle()
@@ -2866,6 +2920,11 @@ private fun ReleaseHeaderRow(
         targetValue = if (isExpanded) 180f else 0f,
         label = "HeaderChevron",
     )
+    // GitHub-style status badges: explicit Color() values (M3 has no green/yellow tokens).
+    // Darkness is read from the actual scheme so forced Light/Dark ThemeMode also works.
+    // Light:  Latest container #DAFBE1 / text #1A7F37; Pre-release #FFF8C5 / #9A6700.
+    // Dark:   muted Latest container #1C3D2A / text #3FB950; Pre-release #3B2E16 / #D29922.
+    val badgesDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -2903,15 +2962,15 @@ private fun ReleaseHeaderRow(
                     if (isLatestStable) {
                         ReleaseStatusBadge(
                             text = stringResource(R.string.badge_latest),
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                            containerColor = if (badgesDark) Color(0xFF1C3D2A) else Color(0xFFDAFBE1),
+                            contentColor = if (badgesDark) Color(0xFF3FB950) else Color(0xFF1A7F37),
                         )
                     }
                     if (info.prerelease) {
                         ReleaseStatusBadge(
                             text = stringResource(R.string.badge_prerelease),
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            containerColor = if (badgesDark) Color(0xFF3B2E16) else Color(0xFFFFF8C5),
+                            contentColor = if (badgesDark) Color(0xFFD29922) else Color(0xFF9A6700),
                         )
                     }
                 }
