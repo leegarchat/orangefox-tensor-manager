@@ -777,10 +777,10 @@ private fun ReleaseInstallCard(
                 }
                 FilledTonalButton(
                     onClick = onOpenRelease,
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondaryContainer.edgeOutline()),
-                    modifier = Modifier.height(42.dp),
+                    modifier = Modifier.height(32.dp),
                 ) {
                     Text(
                         text = stringResource(R.string.action_open_release),

@@ -2436,37 +2436,51 @@ private fun sampleBannerAccentColor(bmp: Bitmap): Color? {
     if (w <= 0 || h <= 0) return null
     // At most ~1024 samples: stride from area, no heavy computation in composition.
     val step = maxOf(1, kotlin.math.sqrt((w * h) / 1024.0).toInt())
-    var rSum = 0L
-    var gSum = 0L
-    var bSum = 0L
-    var count = 0L
+    var rSum = 0.0
+    var gSum = 0.0
+    var bSum = 0.0
+    var weightSum = 0.0
     var y = 0
     while (y < h) {
         var x = 0
         while (x < w) {
             val px = bmp.getPixel(x, y)
             if ((px ushr 24) >= 128) {
-                rSum += ((px shr 16) and 0xFF).toLong()
-                gSum += ((px shr 8) and 0xFF).toLong()
-                bSum += (px and 0xFF).toLong()
-                count++
+                val r = ((px shr 16) and 0xFF) / 255f
+                val g = ((px shr 8) and 0xFF) / 255f
+                val b = (px and 0xFF) / 255f
+                val v = maxOf(r, g, b)
+                // Ignore dark background pixels: they would drag the average into mud.
+                if (v >= 0.35f) {
+                    val minC = minOf(r, g, b)
+                    val delta = v - minC
+                    val s = if (v <= 0f) 0f else delta / v
+                    // Bright + saturated weighs more; whites/pastels keep a floor
+                    // weight (0.35) so they lighten instead of being drowned out.
+                    val weight = v * v * (0.35f + 0.65f * s)
+                    rSum += r * weight
+                    gSum += g * weight
+                    bSum += b * weight
+                    weightSum += weight
+                }
             }
             x += step
         }
         y += step
     }
-    if (count == 0L) return null
+    if (weightSum <= 0.0) return null
     val hsv = FloatArray(3)
     android.graphics.Color.RGBToHSV(
-        (rSum / count).toInt(),
-        (gSum / count).toInt(),
-        (bSum / count).toInt(),
+        (rSum / weightSum * 255f).toInt().coerceIn(0, 255),
+        (gSum / weightSum * 255f).toInt().coerceIn(0, 255),
+        (bSum / weightSum * 255f).toInt().coerceIn(0, 255),
         hsv,
     )
     // Slightly boost saturation (gray banners still hint a tone),
-    // normalize brightness so the veil reads well in both light and dark themes.
-    hsv[1] = (hsv[1] * 1.25f).coerceIn(0f, 0.65f)
-    hsv[2] = hsv[2].coerceIn(0.35f, 0.9f)
+    // normalize brightness so the veil reads well in both light and dark themes:
+    // the raised lower clamp keeps the tint from sinking into dark surfaces.
+    hsv[1] = (hsv[1] * 1.2f).coerceIn(0f, 0.7f)
+    hsv[2] = hsv[2].coerceIn(0.55f, 0.95f)
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
@@ -2525,14 +2539,14 @@ private fun ReleaseCard(
         label = "CardCornerRadius",
     )
     // Subtle veil of the expanded banner-based header. Text does not fight the background:
-    // the accent is applied with low alpha over surfaceContainerLow and reads well in both themes.
+    // the accent is applied at 0.22 alpha over surfaceContainerLow and reads well in both themes.
     // Without a banner — a delicate primaryContainer fallback of the same strength.
     val cardBaseColor = MaterialTheme.colorScheme.surfaceContainerLow
     val bannerAccent = rememberReleaseBannerAccent(tag = info.tag, bannerUrl = info.bannerUrl, cacheImages = cacheImages)
     val expandedHeaderTarget = if (bannerAccent != null) {
-        bannerAccent.copy(alpha = 0.13f).compositeOver(cardBaseColor)
+        bannerAccent.copy(alpha = 0.22f).compositeOver(cardBaseColor)
     } else {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.16f).compositeOver(cardBaseColor)
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f).compositeOver(cardBaseColor)
     }
     val headerAccentBg by animateColorAsState(
         targetValue = if (isExpanded) expandedHeaderTarget else cardBaseColor,
