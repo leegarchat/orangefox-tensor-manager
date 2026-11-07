@@ -72,6 +72,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.orangefox.tensor.manager.R
+import com.orangefox.tensor.manager.executeGithub
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -202,7 +203,7 @@ object SessionImageCache {
                     // Timeouts come from sharedHttpClient (connect/read);
                     // a stalled fetch throws and lands in the catch below,
                     // so the deferred below ALWAYS completes.
-                    com.orangefox.tensor.manager.sharedHttpClient.newCall(req).execute().use { resp ->
+                    com.orangefox.tensor.manager.sharedHttpClient.executeGithub(req).use { resp ->
                         if (!resp.isSuccessful) return@use null
                         resp.body?.bytes()
                     }

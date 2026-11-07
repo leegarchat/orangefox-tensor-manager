@@ -28,3 +28,6 @@ Thumbs.db
 
 # Local notes / reminders (not for repo)
 fox_version_extract.md
+
+# GitHub API token for release builds (never commit)
+github.properties

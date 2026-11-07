@@ -171,7 +171,7 @@ private fun fetchDocsList(context: Context): List<DocInfo> {
         .header("User-Agent", "PixelOFoxApp")
         .header("Accept", "application/vnd.github+json")
         .build()
-    sharedHttpClient.newCall(req).execute().use { resp ->
+    sharedHttpClient.executeGithub(req).use { resp ->
         // 403 (rate limit) and other HTTP errors — throw so refresh()
         // falls back to the disk cache and does NOT overwrite the full list with two fallback READMEs.
         if (!resp.isSuccessful) error("docs list HTTP ${resp.code}")
@@ -212,7 +212,7 @@ private fun downloadText(url: String): String {
         .url(url)
         .header("User-Agent", "PixelOFoxApp")
         .build()
-    sharedHttpClient.newCall(req).execute().use { resp ->
+    sharedHttpClient.executeGithub(req).use { resp ->
         if (!resp.isSuccessful) error("docs HTTP ${resp.code}")
         return resp.body?.string() ?: error("empty doc")
     }

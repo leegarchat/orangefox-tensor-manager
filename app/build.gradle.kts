@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
@@ -7,12 +9,23 @@ android {
     namespace = "com.orangefox.tensor.manager"
     compileSdk = 37
 
+    // Shipped GitHub token (Variant B): read from gitignored github.properties
+    // (or GITHUB_TOKEN env), baked into BuildConfig. Absent file => empty string.
+    val githubProps = Properties().apply {
+        val f = rootProject.file("github.properties")
+        if (f.exists()) f.inputStream().use(::load)
+    }
+    val shippedGithubToken: String =
+        (System.getenv("GITHUB_TOKEN") ?: githubProps.getProperty("GITHUB_TOKEN", ""))
+            .trim().replace("\"", "")
+
     defaultConfig {
         applicationId = "com.orangefox.tensor.manager"
         minSdk = 26
         targetSdk = 37
         versionCode = 2
         versionName = "1.1"
+        buildConfigField("String", "GITHUB_TOKEN", "\"$shippedGithubToken\"")
 
         ndk {
             abiFilters += "arm64-v8a"

@@ -180,6 +180,64 @@ internal val sharedHttpClient = OkHttpClient.Builder()
     .writeTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
     .build()
 
+/**
+ * Shipped read-only token (Variant B): used ONLY as fallback when the
+ * anonymous quota is exhausted. Order: anonymous first, token on 403/429.
+ */
+internal object GithubAuth {
+    @Volatile var tokenInvalid = false
+    @Volatile var tokenExhaustedUntilMs = 0L
+
+    fun token(): String = try {
+        BuildConfig.GITHUB_TOKEN
+    } catch (_: Exception) {
+        ""
+    }
+
+    fun usable(): Boolean {
+        if (tokenInvalid) return false
+        if (token().isBlank()) return false
+        return System.currentTimeMillis() >= tokenExhaustedUntilMs
+    }
+
+    fun markInvalid() {
+        tokenInvalid = true
+    }
+
+    fun markExhausted(resetEpochSec: Long) {
+        tokenExhaustedUntilMs = if (resetEpochSec > 0) {
+            resetEpochSec * 1000L + 60_000L
+        } else {
+            System.currentTimeMillis() + 10 * 60_000L
+        }
+    }
+}
+
+private fun isGithubRateLimited(code: Int) = code == 429 || code == 403
+
+/**
+ * Anonymous-first GitHub call with token fallback. Executes anonymously;
+ * on 403/429 retries ONCE with the shipped token (if usable) and tracks
+ * its state (invalid / exhausted-until-reset). Caller must consume/close
+ * the returned response (e.g. `.use { }`) exactly like a normal call.
+ */
+internal fun OkHttpClient.executeGithub(request: Request): okhttp3.Response {
+    var resp = newCall(request).execute()
+    if (isGithubRateLimited(resp.code) && GithubAuth.usable()) {
+        resp.close()
+        val authed = request.newBuilder()
+            .header("Authorization", "Bearer ${GithubAuth.token()}")
+            .build()
+        resp = newCall(authed).execute()
+        if (resp.code == 401) {
+            GithubAuth.markInvalid()
+        } else if (isGithubRateLimited(resp.code)) {
+            GithubAuth.markExhausted(resp.header("X-RateLimit-Reset")?.toLongOrNull() ?: 0L)
+        }
+    }
+    return resp
+}
+
 /** Manager APK in releases: orangefox*tensor*manager*{versionCode}*.apk */
 internal fun isManagerApkAsset(name: String): Boolean {
     val low = name.lowercase()
@@ -423,7 +481,7 @@ private fun fetchReleases(context: Context): List<ReleaseInfo> {
         .header("User-Agent", "PixelOFoxApp")
         .header("Accept", "application/vnd.github+json")
         .build().let { req ->
-            sharedHttpClient.newCall(req).execute().use { resp ->
+            sharedHttpClient.executeGithub(req).use { resp ->
                 if (!resp.isSuccessful) error("releases HTTP ${resp.code}")
                 val text = resp.body?.string() ?: error("empty releases")
                 val arr = JSONArray(text)
