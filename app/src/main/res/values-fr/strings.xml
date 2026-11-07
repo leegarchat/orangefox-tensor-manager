@@ -216,4 +216,6 @@
     <string name="root_missing_title">Pas d\'accès root</string>
     <string name="root_missing_text">Tu n\'as pas d\'accès root, le gestionnaire ne peut donc pas patcher ton vendor_boot pour installer OrangeFox. Tu peux uniquement consulter la documentation et télécharger les releases.</string>
     <!-- Project URLs: single source of truth, identical in all locales, do not translate -->
+    <string name="settings_force_github_token_title">Forcer le token GitHub</string>
+    <string name="settings_force_github_token_desc">Envoyer les requêtes API avec la clé intégrée au lieu d’anonymes (débogage uniquement)</string>
 </resources>

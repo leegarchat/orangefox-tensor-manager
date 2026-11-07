@@ -218,4 +218,6 @@
     <string name="root_missing_title">Немає root-прав</string>
     <string name="root_missing_text">У вас немає root-прав, тому менеджер не зможе пропатчити ваш vendor_boot для встановлення OrangeFox. Ви можете лише переглядати документацію та завантажувати релізи.</string>
     <!-- Project URLs: single source of truth, identical in all locales, do not translate -->
+    <string name="settings_force_github_token_title">Примусово використовувати токен GitHub</string>
+    <string name="settings_force_github_token_desc">Надсилати запити API із вшитим ключем замість анонімних (лише дебаг)</string>
 </resources>

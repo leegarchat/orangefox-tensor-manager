@@ -215,4 +215,6 @@
     <string name="root_missing_title">没有 Root 权限</string>
     <string name="root_missing_text">你没有 Root 权限，因此管理器无法修补你的 vendor_boot 来安装 OrangeFox。你只能浏览文档和下载 Release。</string>
     <!-- Project URLs: single source of truth, identical in all locales, do not translate -->
+    <string name="settings_force_github_token_title">强制使用 GitHub 令牌</string>
+    <string name="settings_force_github_token_desc">使用内置密钥而非匿名发送 API 请求（仅调试）</string>
 </resources>

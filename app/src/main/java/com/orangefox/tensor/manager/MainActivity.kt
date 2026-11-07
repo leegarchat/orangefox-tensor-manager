@@ -168,6 +168,9 @@ import org.json.JSONArray
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -187,6 +190,8 @@ internal val sharedHttpClient = OkHttpClient.Builder()
 internal object GithubAuth {
     @Volatile var tokenInvalid = false
     @Volatile var tokenExhaustedUntilMs = 0L
+    /** Debug override (Settings, debug builds only): token first instead of anonymous. */
+    @Volatile var forceToken = false
 
     fun token(): String = try {
         BuildConfig.GITHUB_TOKEN
@@ -222,6 +227,20 @@ private fun isGithubRateLimited(code: Int) = code == 429 || code == 403
  * the returned response (e.g. `.use { }`) exactly like a normal call.
  */
 internal fun OkHttpClient.executeGithub(request: Request): okhttp3.Response {
+    if (GithubAuth.forceToken && GithubAuth.usable()) {
+        val authed = request.newBuilder()
+            .header("Authorization", "Bearer ${GithubAuth.token()}")
+            .build()
+        val forced = newCall(authed).execute()
+        if (forced.code != 401) {
+            if (isGithubRateLimited(forced.code)) {
+                GithubAuth.markExhausted(forced.header("X-RateLimit-Reset")?.toLongOrNull() ?: 0L)
+            }
+            return forced
+        }
+        GithubAuth.markInvalid()
+        forced.close()
+    }
     var resp = newCall(request).execute()
     if (isGithubRateLimited(resp.code) && GithubAuth.usable()) {
         resp.close()
@@ -299,6 +318,7 @@ data class ReleaseInfo(
     val assets: List<ReleaseAsset>,
     val prerelease: Boolean = false,
     val reactions: Int = 0,
+    val publishedAt: String? = null,
 )
 
 sealed interface AssetDl {
@@ -521,6 +541,8 @@ private fun fetchReleases(context: Context): List<ReleaseInfo> {
                                 assets = assets,
                                 prerelease = o.optBoolean("prerelease", false),
                                 reactions = o.optJSONObject("reactions")?.optInt("total_count", 0) ?: 0,
+                                publishedAt = o.optString("published_at").takeIf { it.isNotBlank() }
+                                    ?: o.optString("created_at").takeIf { it.isNotBlank() },
                             )
                         )
                     }
@@ -628,6 +650,7 @@ class MainActivity : ComponentActivity() {
             var collapseH2Home by remember { mutableStateOf(prefs.collapseH2Home) }
             var releaseNotifyMode by remember { mutableStateOf(ReleaseNotifyMode.fromOrdinal(prefs.releaseNotifyMode)) }
             var cacheImages by remember { mutableStateOf(prefs.cacheImages) }
+            var forceGithubToken by remember { mutableStateOf(prefs.forceGithubToken) }
             val notifPermLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { }
@@ -658,6 +681,11 @@ class MainActivity : ComponentActivity() {
                     onCollapseH2HomeChange = {
                         collapseH2Home = it
                         prefs.collapseH2Home = it
+                    },
+                    forceGithubToken = forceGithubToken,
+                    onForceGithubTokenChange = {
+                        forceGithubToken = it
+                        prefs.forceGithubToken = it
                     },
                     cacheImages = cacheImages,
                     onCacheImagesChange = {
@@ -746,6 +774,8 @@ fun Root(
     onCollapseH2HomeChange: (Boolean) -> Unit,
     cacheImages: Boolean,
     onCacheImagesChange: (Boolean) -> Unit,
+    forceGithubToken: Boolean = false,
+    onForceGithubTokenChange: (Boolean) -> Unit = {},
     releaseNotifyMode: ReleaseNotifyMode,
     onReleaseNotifyModeChange: (ReleaseNotifyMode) -> Unit,
 ) {
@@ -769,6 +799,9 @@ fun Root(
     // The installer submenu lives in Root so it survives tab switches.
     var installSubmenuTarget by remember { mutableStateOf<InstallTargetRequest?>(null) }
     var filesEpoch by remember { mutableStateOf(0) }
+    LaunchedEffect(forceGithubToken) {
+        GithubAuth.forceToken = forceGithubToken && BuildConfig.DEBUG
+    }
     var focusReleaseTag by rememberSaveable { mutableStateOf<String?>(null) }
     val homeNav = remember { HomeNavState() }
     val homeChips = remember { HomeChipsState() }
@@ -1160,6 +1193,8 @@ fun Root(
                             onCollapseH2AsSpoilersChange = onCollapseH2AsSpoilersChange,
                             collapseH2Home = collapseH2Home,
                             onCollapseH2HomeChange = onCollapseH2HomeChange,
+                            forceGithubToken = forceGithubToken,
+                            onForceGithubTokenChange = onForceGithubTokenChange,
                             cacheImages = cacheImages,
                             onCacheImagesChange = onCacheImagesChange,
                             releaseNotifyMode = releaseNotifyMode,
@@ -1694,6 +1729,8 @@ private fun SettingsScreen(
     onCollapseH2HomeChange: (Boolean) -> Unit,
     cacheImages: Boolean,
     onCacheImagesChange: (Boolean) -> Unit,
+    forceGithubToken: Boolean = false,
+    onForceGithubTokenChange: (Boolean) -> Unit = {},
     releaseNotifyMode: ReleaseNotifyMode,
     onReleaseNotifyModeChange: (ReleaseNotifyMode) -> Unit,
     onWipeAllFiles: () -> Unit = {},
@@ -1870,6 +1907,18 @@ private fun SettingsScreen(
                             checked = cacheImages,
                             onCheckedChange = onCacheImagesChange,
                         )
+                        if (BuildConfig.DEBUG) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 18.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                            )
+                            SettingSwitchRow(
+                                title = stringResource(R.string.settings_force_github_token_title),
+                                description = stringResource(R.string.settings_force_github_token_desc),
+                                checked = forceGithubToken,
+                                onCheckedChange = onForceGithubTokenChange,
+                            )
+                        }
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 18.dp),
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
@@ -2967,6 +3016,23 @@ private fun OpenGitHubReleaseButton(tag: String) {
     }
 }
 
+private val releaseDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
+/**
+ * Formats a GitHub ISO-8601 timestamp (`published_at`/`created_at`) in the
+ * device timezone. Digits-only pattern: no locale-dependent text, so no
+ * string resources needed. Returns null when the input is missing/unparseable
+ * (caller hides the date capsule entirely in that case).
+ */
+private fun formatReleaseDate(iso: String?): String? {
+    if (iso.isNullOrBlank()) return null
+    return try {
+        OffsetDateTime.parse(iso).atZoneSameInstant(ZoneId.systemDefault()).format(releaseDateFormatter)
+    } catch (_: Exception) {
+        null
+    }
+}
+
 @Composable
 private fun ReleaseHeaderRow(
     info: ReleaseInfo,
@@ -2983,6 +3049,8 @@ private fun ReleaseHeaderRow(
     // Light:  Latest container #DAFBE1 / text #1A7F37; Pre-release #FFF8C5 / #9A6700.
     // Dark:   muted Latest container #1C3D2A / text #3FB950; Pre-release #3B2E16 / #D29922.
     val badgesDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    // Formatted once per release (remember), not on every recomposition/frame.
+    val dateText = remember(info.publishedAt) { formatReleaseDate(info.publishedAt) }
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -3011,12 +3079,19 @@ private fun ReleaseHeaderRow(
                     )
                 }
             }
-            if (isLatestStable || info.prerelease) {
+            if (dateText != null || isLatestStable || info.prerelease) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    if (dateText != null) {
+                        ReleaseStatusBadge(
+                            text = dateText,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (isLatestStable) {
                         ReleaseStatusBadge(
                             text = stringResource(R.string.badge_latest),
